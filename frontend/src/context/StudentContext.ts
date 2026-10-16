@@ -16,7 +16,6 @@ type StudentContextValue = {
   signIn: (name: string) => void
   setStudent: (student: Student) => void
   updateStudent: (changes: Partial<Student>) => void
-  addReadingMinutes: (minutes: number) => void
   clearStudent: () => void
 }
 

@@ -1,12 +1,8 @@
 import { useState } from "react"
+import { ProfileApiService, type ProfileUpdate } from "../api/ProfileApiService"
 import { useLoggedInStudent } from "../context/StudentContext"
 
-type Profile = {
-  name: string
-  age: number
-  readingLevel: string
-  interests: string[]
-}
+type Profile = ProfileUpdate
 
 const readingLevels = ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]
 const interestOptions = ["Animals", "Adventure", "Mystery", "Funny", "Magic", "Space", "Sports", "Robots", "Friendship"]
@@ -20,6 +16,7 @@ function ReadingProfileForm() {
     interests: student.interests,
   })
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // copy the old profile and change just the fields that were edited
   function updateProfile(changes: Partial<Profile>) {
@@ -34,10 +31,15 @@ function ReadingProfileForm() {
     updateProfile({ interests })
   }
 
-  function submit() {
-    // later this will also send the profile to the backend
-    updateStudent(profile)
-    setSaved(true)
+  async function submit() {
+    try {
+      const savedProfile = await ProfileApiService.updateProfile(student.id, profile)
+      updateStudent(savedProfile)
+      setSaved(true)
+      setError(null)
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
   return (
@@ -103,6 +105,7 @@ function ReadingProfileForm() {
         Save
       </button>
       {saved && <span className="ml-3 text-green-600">✓ Saved!</span>}
+      {error && <span className="ml-3 text-red-600">Couldn't save: {error}</span>}
     </div>
   )
 }
