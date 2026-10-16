@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useLoggedInStudent } from "../context/StudentContext"
 import ReadingTimer from "./ReadingTimer"
 
 type Badge = {
@@ -18,10 +19,11 @@ const allBadges: Badge[] = [
 
 function ReadingProgressView() {
   const [minutesInput, setMinutesInput] = useState("")
-  const [totalMinutes, setTotalMinutes] = useState(0)
+  const { student, addReadingMinutes } = useLoggedInStudent()
+  const totalMinutes = student.readingMinutes
 
   function addMinutes(minutes: number) {
-    setTotalMinutes((total) => total + minutes)
+    addReadingMinutes(minutes)
   }
 
   function logMinutes() {

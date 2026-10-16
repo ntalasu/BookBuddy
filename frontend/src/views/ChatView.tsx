@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useLoggedInStudent } from "../context/StudentContext"
 import ChatInput from "./ChatInput"
 import VocabularyCard from "./VocabularyCard"
 
@@ -29,8 +30,9 @@ function cleanWord(word: string) {
 }
 
 function ChatView() {
+  const { student } = useLoggedInStudent()
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { from: "buddy", text: "Hi! I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!" },
+    { from: "buddy", text: `Hi ${student.name}! I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!` },
   ])
   const [typing, setTyping] = useState(false)
   const [selectedWord, setSelectedWord] = useState<string | null>(null)
