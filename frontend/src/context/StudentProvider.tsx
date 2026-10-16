@@ -53,16 +53,12 @@ function StudentProvider({ children }: { children: ReactNode }) {
     setStudent((s) => (s ? { ...s, ...changes } : s))
   }
 
-  function addReadingMinutes(minutes: number) {
-    setStudent((s) => (s ? { ...s, readingMinutes: s.readingMinutes + minutes } : s))
-  }
-
   function clearStudent() {
     setStudent(null)
   }
 
   return (
-    <StudentContext.Provider value={{ student, signIn, setStudent, updateStudent, addReadingMinutes, clearStudent }}>
+    <StudentContext.Provider value={{ student, signIn, setStudent, updateStudent, clearStudent }}>
       {children}
     </StudentContext.Provider>
   )
