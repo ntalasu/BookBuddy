@@ -2,6 +2,9 @@ import { useEffect, useState } from "react"
 import {
   searchBooks,
   getBookDetails,
+  saveBook,
+  getSavedBooks,
+  deleteBook,
   type Book as ApiBook
 } from "../services/api"
 
@@ -50,19 +53,74 @@ function formatBook(book: ApiBook): Book {
 
 function BookDiscoveryView() {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState("")
   const [books, setBooks] = useState<Book[]>([])
+  const [savedBooks, setSavedBooks] = useState<Book[]>([])
   const [query, setQuery] = useState("Matilda")
   const [loading, setLoading] = useState(false)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState("")
   const [detailsError, setDetailsError] = useState("")
 
+  async function loadSavedBooks() {
+    try {
+      const results = await getSavedBooks()
+      setSavedBooks(results.map(formatBook))
+    } catch (error) {
+      console.error("Error loading saved books:", error)
+    }
+  }
+
+  // Save selected book to the database
+  const handleSaveBook = async () => {
+    if (!selectedBook || saving || detailsLoading) return
+
+    setSaving(true)
+    setSaveMessage("")
+
+    try {
+      const bookDetails = await getBookDetails(selectedBook.id)
+
+      await saveBook(bookDetails)
+      await loadSavedBooks()
+
+      setSaveMessage("Book saved to your bookshelf!")
+    } catch (error) {
+      console.error("Error saving book:", error)
+      setSaveMessage("Failed to save book.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteBook = async () => {
+    if (!selectedBook) return
+
+    try {
+      await deleteBook(selectedBook.id)
+
+      // Remove the deleted book from the bookshelf
+      setSavedBooks((prev) =>
+        prev.filter((book) => book.id !== selectedBook.id)
+      )
+
+      setSelectedBook(null)
+      setSaveMessage("")
+    } catch (error) {
+      console.error("Error deleting book:", error)
+      setSaveMessage("Failed to remove book.")
+    }
+  }
+
+  // Search for books using Google Books API
   async function handleSearch(searchQuery: string) {
     if (!searchQuery.trim()) return
 
     setLoading(true)
     setError("")
     setDetailsError("")
+    setSaveMessage("")
     setSelectedBook(null)
 
     try {
@@ -78,15 +136,17 @@ function BookDiscoveryView() {
   }
 
   // Load books when the page opens
-  useEffect(() => {
-    handleSearch("Matilda")
-  }, [])
+useEffect(() => {
+  handleSearch("Matilda")
+  loadSavedBooks()
+}, [])
 
   // Retrieve full book details when clicked
   async function handleSelectBook(book: Book) {
     setSelectedBook(book)
     setDetailsLoading(true)
     setDetailsError("")
+    setSaveMessage("")
 
     try {
       const details = await getBookDetails(book.id)
@@ -101,8 +161,46 @@ function BookDiscoveryView() {
 
   return (
     <section className="p-6">
+
+      {/* My saved bookshelf */}
       <h2 className="mb-4 text-2xl font-bold">
-        Your Bookshelf
+        📚 My Bookshelf
+      </h2>
+
+      {savedBooks.length === 0 ? (
+        <p className="mb-8 text-gray-600">
+          No saved books yet. Discover a book and add it to your bookshelf!
+        </p>
+      ) : (
+        <div className="mb-10 flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
+          {savedBooks.map((book, index) => {
+            const isSelected = selectedBook?.id === book.id
+
+            return (
+              <button
+                key={book.id}
+                onClick={() => handleSelectBook(book)}
+                className={`${spineColors[index % spineColors.length]} ${spineHeights[index % spineHeights.length]}
+                  flex w-14 cursor-pointer justify-between overflow-hidden rounded-t-sm px-2 py-3 text-white shadow-lg
+                  transition-transform [writing-mode:vertical-rl]
+                  ${isSelected ? "-translate-y-6" : "hover:-translate-y-2"}`}
+              >
+                <span className="font-bold">
+                  {book.title}
+                </span>
+
+                <span className="text-xs opacity-80">
+                  {book.author}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Discover books */}
+      <h2 className="mb-4 text-2xl font-bold">
+        🔎 Discover Books
       </h2>
 
       {/* Search bar */}
@@ -129,15 +227,21 @@ function BookDiscoveryView() {
 
       {/* Search status */}
       {error && (
-        <p className="mb-4 text-red-600">{error}</p>
+        <p className="mb-4 text-red-600">
+          {error}
+        </p>
       )}
 
       {loading && (
-        <p className="mb-4 text-gray-600">Loading books...</p>
+        <p className="mb-4 text-gray-600">
+          Loading books...
+        </p>
       )}
 
       {!loading && !error && books.length === 0 && (
-        <p className="mb-4 text-gray-600">No books found.</p>
+        <p className="mb-4 text-gray-600">
+          No books found.
+        </p>
       )}
 
       {/* Bookshelf - Nina's original design */}
@@ -154,8 +258,13 @@ function BookDiscoveryView() {
                 transition-transform [writing-mode:vertical-rl]
                 ${isSelected ? "-translate-y-6" : "hover:-translate-y-2"}`}
             >
-              <span className="font-bold">{book.title}</span>
-              <span className="text-xs opacity-80">{book.author}</span>
+              <span className="font-bold">
+                {book.title}
+              </span>
+
+              <span className="text-xs opacity-80">
+                {book.author}
+              </span>
             </button>
           )
         })}
@@ -165,6 +274,7 @@ function BookDiscoveryView() {
       {selectedBook && (
         <div className="mt-8 flex max-w-xl gap-6 rounded-xl bg-white p-6 shadow-lg">
 
+          {/* Book cover */}
           {selectedBook.coverUrl ? (
             <img
               src={selectedBook.coverUrl}
@@ -177,7 +287,9 @@ function BookDiscoveryView() {
             </div>
           )}
 
-          <div>
+          {/* Book information */}
+          <div className="min-w-0 flex-1">
+
             <h3 className="text-2xl font-bold">
               {selectedBook.title}
             </h3>
@@ -200,24 +312,28 @@ function BookDiscoveryView() {
 
             {!detailsLoading && (
               <>
+                {/* Description */}
                 {selectedBook.description && (
                   <p className="mt-4 text-sm text-gray-700">
                     {selectedBook.description}
                   </p>
                 )}
 
+                {/* Page count */}
                 {selectedBook.pageCount != null && (
                   <p className="mt-3 text-sm">
                     <strong>Pages:</strong> {selectedBook.pageCount}
                   </p>
                 )}
 
+                {/* Published date */}
                 {selectedBook.publishedDate && (
                   <p className="mt-2 text-sm">
                     <strong>Published:</strong> {selectedBook.publishedDate}
                   </p>
                 )}
 
+                {/* Genres */}
                 {selectedBook.genres.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {selectedBook.genres.map((genre) => (
@@ -232,6 +348,32 @@ function BookDiscoveryView() {
                 )}
               </>
             )}
+
+            {/* Save to Bookshelf button */}
+            <button
+              onClick={handleSaveBook}
+              disabled={saving || detailsLoading}
+              className="mt-5 rounded-lg bg-orange-500 px-5 py-2 font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "📚 Save to Bookshelf"}
+            </button>
+
+            {savedBooks.some((book) => book.id === selectedBook.id) && (
+              <button
+                onClick={handleDeleteBook}
+                className="mt-3 rounded-lg bg-red-500 px-5 py-2 font-semibold text-white hover:bg-red-600"
+              >
+                🗑️ Remove from Bookshelf
+              </button>
+            )}
+
+            {/* Save confirmation message */}
+            {saveMessage && (
+              <p className="mt-2 text-sm text-gray-700">
+                {saveMessage}
+              </p>
+            )}
+
           </div>
         </div>
       )}

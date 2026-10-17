@@ -34,3 +34,40 @@ export async function getBookDetails(bookId: string): Promise<Book> {
 
   return response.json();
 }
+
+export async function saveBook(book: Book): Promise<void> {
+  const response = await fetch(`${API_URL}/bookshelf`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(book),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to save book");
+  }
+}
+
+export async function getSavedBooks(): Promise<Book[]> {
+  const response = await fetch(`${API_URL}/bookshelf`);
+
+  if (!response.ok) {
+    throw new Error("Failed to retrieve saved books");
+  }
+
+  return response.json();
+}
+
+export async function deleteBook(bookId: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/bookshelf/${encodeURIComponent(bookId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to delete book");
+  }
+}
