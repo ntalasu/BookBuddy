@@ -1,6 +1,6 @@
 type Props = {
   word: string
-  definition: string
+  definition: string | null // null while it's still being looked up
   onClose: () => void
 }
 
@@ -14,7 +14,7 @@ function VocabularyCard({ word, definition, onClose }: Props) {
         </button>
       </div>
       <p className="text-2xl font-bold">{word}</p>
-      <p className="mt-1">{definition}</p>
+      <p className="mt-1">{definition ?? "Looking it up…"}</p>
     </div>
   )
 }

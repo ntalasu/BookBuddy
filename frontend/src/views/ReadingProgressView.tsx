@@ -1,46 +1,32 @@
 import { useState } from "react"
+import { useLoggedInStudent } from "../context/StudentContext"
+import { useReadingProgress } from "../hooks/useReadingProgress"
 import ReadingTimer from "./ReadingTimer"
-
-type Badge = {
-  id: string
-  name: string
-  criteria: string
-  minutesNeeded: number
-  emoji: string
-}
-
-const allBadges: Badge[] = [
-  { id: "1", name: "First Page", criteria: "Read for 10 minutes", minutesNeeded: 10, emoji: "📖" },
-  { id: "2", name: "Bookworm", criteria: "Read for 60 minutes", minutesNeeded: 60, emoji: "🐛" },
-  { id: "3", name: "Reading Star", criteria: "Read for 180 minutes", minutesNeeded: 180, emoji: "⭐" },
-  { id: "4", name: "Book Champion", criteria: "Read for 300 minutes", minutesNeeded: 300, emoji: "🏆" },
-]
 
 function ReadingProgressView() {
   const [minutesInput, setMinutesInput] = useState("")
-  const [totalMinutes, setTotalMinutes] = useState(0)
-
-  function addMinutes(minutes: number) {
-    setTotalMinutes((total) => total + minutes)
-  }
+  const { student } = useLoggedInStudent()
+  const { progress, error, logReading } = useReadingProgress(student.id)
 
   function logMinutes() {
     const minutes = Number(minutesInput)
     if (minutes <= 0) return
-    addMinutes(minutes)
+    logReading(minutes)
     setMinutesInput("")
   }
 
+  if (error) return <p className="p-6 text-red-600">Couldn't load your progress: {error}</p>
+  if (!progress) return <p className="p-6 text-gray-500">Loading your progress…</p>
 
-  const earnedBadges = allBadges.filter((badge) => totalMinutes >= badge.minutesNeeded)
-  const nextBadge = allBadges.find((badge) => totalMinutes < badge.minutesNeeded)
+  const { totalMinutes, badges, earnedBadgeIds } = progress
+  const nextBadge = badges.find((badge) => !earnedBadgeIds.includes(badge.id))
 
   return (
     <section className="p-6">
       <h2 className="mb-4 text-2xl font-bold">My Reading</h2>
 
       <div className="max-w-xl rounded-xl bg-white p-6 shadow-lg">
-        <ReadingTimer onFinish={addMinutes} />
+        <ReadingTimer onFinish={logReading} />
 
         <p className="mt-6 mb-2 text-sm text-gray-500">Read without the timer? Type your minutes:</p>
 
@@ -78,8 +64,8 @@ function ReadingProgressView() {
 
       <h3 className="mt-8 mb-3 text-xl font-bold">My Badges</h3>
       <div className="flex flex-wrap gap-4">
-        {allBadges.map((badge) => {
-          const earned = earnedBadges.includes(badge)
+        {badges.map((badge) => {
+          const earned = earnedBadgeIds.includes(badge.id)
           return (
             <div
               key={badge.id}

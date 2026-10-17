@@ -1,54 +1,29 @@
 import { useState } from "react"
+import { useLoggedInStudent } from "../context/StudentContext"
+import { useChat } from "../hooks/useChat"
 import ChatInput from "./ChatInput"
 import VocabularyCard from "./VocabularyCard"
-
-type ChatMessage = {
-  from: "student" | "buddy"
-  text: string
-}
-
-// Fake data until the backend's ChatService and VocabularyService are ready
-const fakeReplies = [
-  "Ooh, great question! A good adventure story always has a brave character who faces a challenge.",
-  "I think you'd enjoy a mysterious book. Want me to suggest one?",
-  "That's so interesting! Being curious is what makes a great reader.",
-  "Books are amazing because they let your imagination go anywhere!",
-]
-
-const definitions: Record<string, string> = {
-  adventure: "An exciting trip or experience, often with some danger.",
-  character: "A person or animal in a story.",
-  challenge: "Something hard that takes effort to do.",
-  mysterious: "Strange and hard to explain or understand.",
-  curious: "Wanting to learn or know more about something.",
-  imagination: "The part of your mind that makes up pictures and ideas.",
-}
 
 function cleanWord(word: string) {
   return word.toLowerCase().replace(/[^a-z]/g, "")
 }
 
 function ChatView() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { from: "buddy", text: "Hi! I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!" },
-  ])
-  const [typing, setTyping] = useState(false)
+  const { student } = useLoggedInStudent()
+  const { messages, typing, error, sendMessage, defineWord } = useChat(
+    student.id,
+    `Hi ${student.name}! I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!`,
+  )
   const [selectedWord, setSelectedWord] = useState<string | null>(null)
+  const [definition, setDefinition] = useState<{ word: string; text: string } | null>(null)
 
-  function submitMessage(message: string) {
-    setMessages((m) => [...m, { from: "student", text: message }])
-    setTyping(true)
-
-    // pretend to wait for the backend
-    setTimeout(() => {
-      const reply = fakeReplies[Math.floor(Math.random() * fakeReplies.length)]
-      displayResponse(reply)
-    }, 1000)
-  }
-
-  function displayResponse(reply: string) {
-    setTyping(false)
-    setMessages((m) => [...m, { from: "buddy", text: reply }])
+  async function showDefinition(word: string, context: string) {
+    setSelectedWord(word)
+    try {
+      setDefinition({ word, text: await defineWord(word, context) })
+    } catch {
+      setDefinition({ word, text: "Sorry, I couldn't look that word up." })
+    }
   }
 
   return (
@@ -65,35 +40,34 @@ function ChatView() {
                 message.from === "student" ? "ml-auto bg-orange-500 text-white" : "bg-amber-100"
               }`}
             >
-              {message.from === "buddy"
-                ? message.text.split(" ").map((word, i) =>
-                    definitions[cleanWord(word)] ? (
-                      <button
-                        key={i}
-                        onClick={() => setSelectedWord(cleanWord(word))}
-                        className="cursor-pointer font-semibold text-sky-700 underline decoration-dotted"
-                      >
-                        {word}{" "}
-                      </button>
-                    ) : (
-                      <span key={i}>{word} </span>
-                    ),
-                  )
-                : message.text}
+              {message.text.split(" ").map((word, i) =>
+                message.vocabularyWords?.includes(cleanWord(word)) ? (
+                  <button
+                    key={i}
+                    onClick={() => showDefinition(cleanWord(word), message.text)}
+                    className="cursor-pointer font-semibold text-sky-700 underline decoration-dotted"
+                  >
+                    {word}{" "}
+                  </button>
+                ) : (
+                  <span key={i}>{word} </span>
+                ),
+              )}
             </div>
           ))}
           {typing && <p className="text-sm text-gray-400">BookBuddy is typing…</p>}
+          {error && <p className="text-sm text-red-600">Oops, something went wrong: {error}</p>}
         </div>
 
         {selectedWord && (
           <VocabularyCard
             word={selectedWord}
-            definition={definitions[selectedWord]}
+            definition={definition?.word === selectedWord ? definition.text : null}
             onClose={() => setSelectedWord(null)}
           />
         )}
 
-        <ChatInput onSend={submitMessage} disabled={typing} />
+        <ChatInput onSend={sendMessage} disabled={typing} />
       </div>
     </section>
   )
