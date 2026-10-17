@@ -143,6 +143,12 @@ useEffect(() => {
 
   // Retrieve full book details when clicked
   async function handleSelectBook(book: Book) {
+    // clicking the book that's already open closes it
+    if (selectedBook?.id === book.id) {
+      setSelectedBook(null)
+      return
+    }
+
     setSelectedBook(book)
     setDetailsLoading(true)
     setDetailsError("")
@@ -150,7 +156,7 @@ useEffect(() => {
 
     try {
       const details = await getBookDetails(book.id)
-      setSelectedBook(formatBook(details))
+         setSelectedBook((current) => (current?.id === book.id ? formatBook(details) : current))
     } catch (err) {
       console.error("Error retrieving book details:", err)
       setDetailsError("Unable to load additional book details.")
