@@ -27,7 +27,7 @@ function BookDiscoveryView() {
             // one book spine
             <button
               key={book.id}
-              onClick={() => setSelected(recommendation)}
+             onClick={() => setSelected(isSelected ? null : recommendation)}
               className={`${spineColors[index % spineColors.length]} ${spineHeights[index % spineHeights.length]}
                 flex w-14 cursor-pointer justify-between overflow-hidden rounded-t-sm px-2 py-3 text-white shadow-lg
                 transition-transform [writing-mode:vertical-rl]
