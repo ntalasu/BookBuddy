@@ -3,8 +3,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from services.google_books import search_books, get_book_details
-from database import init_db, save_book, get_saved_books, delete_book
+from database import (
+    init_db, save_book, get_saved_books, delete_book,
+    get_student, find_student_by_name, create_student, update_student
+)
 import requests
+import uuid
 
 
 # Initialize database when the application starts
@@ -98,3 +102,67 @@ def remove_from_bookshelf(book_id: str):
         )
 
     return {"message": "Book removed successfully!"}
+
+# Student model (profile + reading buddy customization)
+class Student(BaseModel):
+    id: str
+    name: str
+    age: int
+    readingLevel: str
+    readingMinutes: int
+    interests: list[str]
+    characterId: str
+    characterColor: str
+    buddyName: str
+    hatId: str
+    itemId: str
+
+
+class SignInRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+
+
+# Every field is optional so the frontend can send only what changed
+class StudentUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+    age: int | None = Field(default=None, ge=4, le=12)
+    readingLevel: str | None = None
+    interests: list[str] | None = None
+    characterId: str | None = None
+    characterColor: str | None = None
+    buddyName: str | None = Field(default=None, max_length=20)
+    hatId: str | None = None
+    itemId: str | None = None
+
+
+# Sign in by name: returns the existing student, or creates a new one
+@app.post("/students/sign-in", response_model=Student)
+def sign_in(request: SignInRequest):
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Name can't be empty.")
+
+    student = find_student_by_name(name)
+    if student:
+        return student
+
+    return create_student(str(uuid.uuid4()), name)
+
+
+@app.get("/students/{student_id}", response_model=Student)
+def get_student_profile(student_id: str):
+    student = get_student(student_id)
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    return student
+
+
+# Save profile or reading buddy changes
+@app.post("/students/{student_id}", response_model=Student)
+def update_student_profile(student_id: str, changes: StudentUpdate):
+    if not get_student(student_id):
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    return update_student(student_id, changes.model_dump(exclude_unset=True, exclude_none=True))

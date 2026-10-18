@@ -1,52 +1,48 @@
 import { useEffect, useState, type ReactNode } from "react"
+import { ApiError } from "../api/ApiClient"
+import { ProfileApiService } from "../api/ProfileApiService"
 import { StudentContext, type Student } from "./StudentContext"
 
-// Fake "database" in the browser until the backend stores real accounts
-const CURRENT_KEY = "bookbuddy-student" // who is signed in right now
-const ALL_KEY = "bookbuddy-all-students" // every student who has ever signed in, by id
+// Remembers who is signed in on this browser, so a refresh doesn't sign them out.
+// The student's actual profile is saved by the backend.
+const CURRENT_KEY = "bookbuddy-student"
 
 function loadStudent(): Student | null {
   const saved = localStorage.getItem(CURRENT_KEY)
   return saved ? JSON.parse(saved) : null
 }
 
-function loadAllStudents(): Record<string, Student> {
-  const saved = localStorage.getItem(ALL_KEY)
-  return saved ? JSON.parse(saved) : {}
-}
-
 function StudentProvider({ children }: { children: ReactNode }) {
   const [student, setStudent] = useState<Student | null>(loadStudent)
+  const studentId = student?.id
 
-  // save to the browser so the student stays signed in after a refresh,
-  // and so their progress is still there if they sign out and back in
+  // keep the browser's copy up to date
   useEffect(() => {
-    if (student) {
-      localStorage.setItem(CURRENT_KEY, JSON.stringify(student))
-      const all = loadAllStudents()
-      all[student.id] = student
-      localStorage.setItem(ALL_KEY, JSON.stringify(all))
-    } else {
-      localStorage.removeItem(CURRENT_KEY)
-    }
+    if (student) localStorage.setItem(CURRENT_KEY, JSON.stringify(student))
+    else localStorage.removeItem(CURRENT_KEY)
   }, [student])
 
-  function signIn(name: string) {
-    const returning = Object.values(loadAllStudents()).find(
-      (s) => s.name.toLowerCase() === name.toLowerCase(),
-    )
-    setStudent(
-      returning ?? {
-        id: crypto.randomUUID(),
-        name,
-        age: 8,
-        readingLevel: "Grade 3",
-        readingMinutes: 0,
-        interests: [],
-        characterId: "fox",
-        characterColor: "bg-orange-200",
-      },
-    )
+  // when the app opens, get the latest profile from the backend
+  useEffect(() => {
+    if (!studentId) return
+    let ignore = false
+    ProfileApiService.getProfile(studentId)
+      .then((latest) => {
+        if (!ignore) setStudent(latest)
+      })
+      .catch((e) => {
+        // the backend doesn't know this student (e.g. signed in before profiles were saved
+        // there): sign them out so they can sign in again. If the backend is just down, keep
+        // using the saved copy.
+        if (!ignore && e instanceof ApiError && e.status === 404) setStudent(null)
+      })
+    return () => {
+      ignore = true
+    }
+  }, [studentId])
+
+  async function signIn(name: string) {
+    setStudent(await ProfileApiService.signIn(name))
   }
 
   function updateStudent(changes: Partial<Student>) {

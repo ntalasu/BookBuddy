@@ -9,11 +9,14 @@ export type Student = {
   interests: string[]
   characterId: string
   characterColor: string
+  buddyName?: string
+  hatId?: string
+  itemId?: string
 }
 
 type StudentContextValue = {
   student: Student | null
-  signIn: (name: string) => void
+  signIn: (name: string) => Promise<void>
   setStudent: (student: Student) => void
   updateStudent: (changes: Partial<Student>) => void
   clearStudent: () => void

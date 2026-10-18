@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router"
 import { useLoggedInStudent } from "./context/StudentContext"
-import { findCharacter } from "./data/characters"
+import BuddyAvatar from "./views/BuddyAvatar"
 
 const tabs = [
   { to: "/discover", label: "📚 Discover" },
@@ -11,7 +11,6 @@ const tabs = [
 
 function AppLayout() {
   const { student, clearStudent } = useLoggedInStudent()
-  const character = findCharacter(student.characterId)
 
   return (
     <div className="min-h-screen bg-amber-50">
@@ -34,9 +33,13 @@ function AppLayout() {
             ))}
           </nav>
           <div className="flex items-center gap-2">
-            <span className={`flex h-10 w-10 items-center justify-center rounded-full text-2xl ${student.characterColor}`}>
-              {character.emoji}
-            </span>
+            <BuddyAvatar
+              characterId={student.characterId}
+              color={student.characterColor}
+              hatId={student.hatId}
+              itemId={student.itemId}
+              size="md"
+            />
             <span className="font-semibold">{student.name}</span>
             <button onClick={clearStudent} className="ml-2 text-sm text-gray-500 hover:text-gray-800">
               Sign out
