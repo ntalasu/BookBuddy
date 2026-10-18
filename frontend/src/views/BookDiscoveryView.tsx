@@ -178,7 +178,7 @@ useEffect(() => {
           No saved books yet. Discover a book and add it to your bookshelf!
         </p>
       ) : (
-        <div className="mb-10 flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
+        <div className="mt-10 mb-10 flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
           {savedBooks.map((book, index) => {
             const isSelected = selectedBook?.id === book.id
 
