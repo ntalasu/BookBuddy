@@ -36,6 +36,16 @@ const spineHeights = [
   "h-80"
 ]
 
+// Pick a spine style from the book id so the same book always looks
+// the same, whether it's on the discover shelf or the saved bookshelf
+function getSpineStyle(bookId: string) {
+  let hash = 0
+  for (const char of bookId) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return `${spineColors[hash % spineColors.length]} ${spineHeights[hash % spineHeights.length]}`
+}
+
 // Convert Google Books data into our bookshelf format
 function formatBook(book: ApiBook): Book {
   return {
@@ -179,14 +189,14 @@ useEffect(() => {
         </p>
       ) : (
         <div className="mt-10 mb-10 flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
-          {savedBooks.map((book, index) => {
+          {savedBooks.map((book) => {
             const isSelected = selectedBook?.id === book.id
 
             return (
               <button
                 key={book.id}
                 onClick={() => handleSelectBook(book)}
-                className={`${spineColors[index % spineColors.length]} ${spineHeights[index % spineHeights.length]}
+                className={`${getSpineStyle(book.id)}
                   flex w-14 cursor-pointer justify-between overflow-hidden rounded-t-sm px-2 py-3 text-white shadow-lg
                   transition-transform [writing-mode:vertical-rl]
                   ${isSelected ? "-translate-y-6" : "hover:-translate-y-2"}`}
@@ -252,14 +262,14 @@ useEffect(() => {
 
       {/* Bookshelf - Nina's original design */}
       <div className="flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
-        {books.map((book, index) => {
+        {books.map((book) => {
           const isSelected = selectedBook?.id === book.id
 
           return (
             <button
               key={book.id}
               onClick={() => handleSelectBook(book)}
-              className={`${spineColors[index % spineColors.length]} ${spineHeights[index % spineHeights.length]}
+              className={`${getSpineStyle(book.id)}
                 flex w-14 cursor-pointer justify-between overflow-hidden rounded-t-sm px-2 py-3 text-white shadow-lg
                 transition-transform [writing-mode:vertical-rl]
                 ${isSelected ? "-translate-y-6" : "hover:-translate-y-2"}`}
