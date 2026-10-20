@@ -5,15 +5,25 @@ import { useStudent } from "../context/StudentContext"
 function WelcomePage() {
   const { student, signIn } = useStudent()
   const [name, setName] = useState("")
+  const [signingIn, setSigningIn] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // already signed in? go straight to the bookshelf
   if (student) return <Navigate to="/discover" replace />
 
-  function start() {
+  async function start() {
     const trimmed = name.trim()
-    if (trimmed === "") return
-    // fake sign-in until the backend handles real accounts
-    signIn(trimmed)
+    if (trimmed === "" || signingIn) return
+    setSigningIn(true)
+    setError(null)
+    try {
+      // name-only sign-in until the backend handles real accounts with passwords
+      await signIn(trimmed)
+    } catch {
+      setError("Can't reach BookBuddy right now. Is the backend running?")
+    } finally {
+      setSigningIn(false)
+    }
   }
 
   return (
@@ -33,10 +43,12 @@ function WelcomePage() {
         />
         <button
           onClick={start}
-          className="mt-4 w-full rounded-lg bg-orange-500 py-2 font-semibold text-white hover:bg-orange-600"
+          disabled={signingIn}
+          className="mt-4 w-full rounded-lg bg-orange-500 py-2 font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
         >
-          Let's read!
+          {signingIn ? "Signing in…" : "Let's read!"}
         </button>
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
     </div>
   )

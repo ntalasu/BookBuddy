@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useLoggedInStudent } from "../context/StudentContext"
 import { useChat } from "../hooks/useChat"
+import BuddyAvatar from "./BuddyAvatar"
 import ChatInput from "./ChatInput"
 import VocabularyCard from "./VocabularyCard"
 
@@ -12,7 +13,7 @@ function ChatView() {
   const { student } = useLoggedInStudent()
   const { messages, typing, error, sendMessage, defineWord } = useChat(
     student.id,
-    `Hi ${student.name}! I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!`,
+    `Hi ${student.name}!${student.buddyName ? ` And hi to ${student.buddyName} too!` : ""} I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!`,
   )
   const [selectedWord, setSelectedWord] = useState<string | null>(null)
   const [definition, setDefinition] = useState<{ word: string; text: string } | null>(null)
@@ -36,23 +37,39 @@ function ChatView() {
           {messages.map((message, index) => (
             <div
               key={index}
-              className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                message.from === "student" ? "ml-auto bg-orange-500 text-white" : "bg-amber-100"
-              }`}
+              className={`flex items-end gap-2 ${message.from === "student" ? "flex-row-reverse" : ""}`}
             >
-              {message.text.split(" ").map((word, i) =>
-                message.vocabularyWords?.includes(cleanWord(word)) ? (
-                  <button
-                    key={i}
-                    onClick={() => showDefinition(cleanWord(word), message.text)}
-                    className="cursor-pointer font-semibold text-sky-700 underline decoration-dotted"
-                  >
-                    {word}{" "}
-                  </button>
-                ) : (
-                  <span key={i}>{word} </span>
-                ),
+              {/* who's talking: the student's buddy, or BookBuddy */}
+              {message.from === "student" ? (
+                <BuddyAvatar
+                  characterId={student.characterId}
+                  color={student.characterColor}
+                  hatId={student.hatId}
+                  itemId={student.itemId}
+                  size="sm"
+                />
+              ) : (
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-200 text-lg">📚</div>
               )}
+              <div
+                className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                  message.from === "student" ? "bg-orange-500 text-white" : "bg-amber-100"
+                }`}
+              >
+                {message.text.split(" ").map((word, i) =>
+                  message.vocabularyWords?.includes(cleanWord(word)) ? (
+                    <button
+                      key={i}
+                      onClick={() => showDefinition(cleanWord(word), message.text)}
+                      className="cursor-pointer font-semibold text-sky-700 underline decoration-dotted"
+                    >
+                      {word}{" "}
+                    </button>
+                  ) : (
+                    <span key={i}>{word} </span>
+                  ),
+                )}
+              </div>
             </div>
           ))}
           {typing && <p className="text-sm text-gray-400">BookBuddy is typing…</p>}

@@ -1,2 +1,9 @@
-node_modules/
+.idea/
+backend/.venv/
+backend/.env
+backend/__pycache__/
+frontend/node_modules/
+frontend/dist/
+backend/*.db
 .DS_Store
+backend/books.db
