@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+import secrets
 
 DATABASE_PATH = Path(__file__).resolve().parent / "books.db"
 
@@ -29,6 +30,7 @@ def init_db():
     connection.execute("""
         CREATE TABLE IF NOT EXISTS students (
             id TEXT PRIMARY KEY,
+            workos_user_id TEXT UNIQUE,
             name TEXT NOT NULL,
             age INTEGER NOT NULL DEFAULT 8,
             reading_level TEXT NOT NULL DEFAULT 'Grade 3',
@@ -39,6 +41,31 @@ def init_db():
             buddy_name TEXT NOT NULL DEFAULT '',
             hat_id TEXT NOT NULL DEFAULT 'none',
             item_id TEXT NOT NULL DEFAULT 'none'
+        )
+    """)
+
+    # Add WorkOS user ID to existing student records
+    columns = [
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(students)").fetchall()
+    ]
+
+    if "workos_user_id" not in columns:
+        connection.execute(
+            "ALTER TABLE students ADD COLUMN workos_user_id TEXT"
+        )
+
+    connection.execute("""
+                       CREATE UNIQUE INDEX IF NOT EXISTS idx_students_workos_user
+                           ON students(workos_user_id)
+                       """)
+
+    # Store authenticated user sessions
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            session_hash TEXT PRIMARY KEY,
+            workos_user_id TEXT NOT NULL,
+            expires_at INTEGER NOT NULL
         )
     """)
 
@@ -156,12 +183,12 @@ def get_student(student_id):
     return student_from_row(row) if row else None
 
 
-def find_student_by_name(name):
+def find_student_by_workos_id(workos_user_id):
     connection = get_connection()
 
     row = connection.execute(
-        "SELECT * FROM students WHERE LOWER(name) = LOWER(?)",
-        (name,)
+        "SELECT * FROM students WHERE workos_user_id = ?",
+        (workos_user_id,)
     ).fetchone()
 
     connection.close()
@@ -169,12 +196,15 @@ def find_student_by_name(name):
     return student_from_row(row) if row else None
 
 
-def create_student(student_id, name):
+def create_student(student_id, name, workos_user_id):
     connection = get_connection()
 
     connection.execute(
-        "INSERT INTO students (id, name) VALUES (?, ?)",
-        (student_id, name)
+        """
+        INSERT INTO students (id, name, workos_user_id)
+        VALUES (?, ?, ?)
+        """,
+        (student_id, name, workos_user_id)
     )
 
     connection.commit()
@@ -204,3 +234,53 @@ def update_student(student_id, changes):
         connection.close()
 
     return get_student(student_id)
+
+import hashlib
+import time
+
+
+def hash_session(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_auth_session(workos_user_id):
+    token = secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + 86400  # 24 hours
+
+    connection = get_connection()
+    connection.execute(
+        """
+        INSERT INTO auth_sessions (session_hash, workos_user_id, expires_at)
+        VALUES (?, ?, ?)
+        """,
+        (hash_session(token), workos_user_id, expires_at)
+    )
+    connection.commit()
+    connection.close()
+
+    return token
+
+
+def get_auth_session(token):
+    connection = get_connection()
+    row = connection.execute(
+        """
+        SELECT workos_user_id
+        FROM auth_sessions
+        WHERE session_hash = ? AND expires_at > ?
+        """,
+        (hash_session(token), int(time.time()))
+    ).fetchone()
+    connection.close()
+
+    return row["workos_user_id"] if row else None
+
+
+def delete_auth_session(token):
+    connection = get_connection()
+    connection.execute(
+        "DELETE FROM auth_sessions WHERE session_hash = ?",
+        (hash_session(token),)
+    )
+    connection.commit()
+    connection.close()

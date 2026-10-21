@@ -3,45 +3,102 @@ import { ApiError } from "../api/ApiClient"
 import { ProfileApiService } from "../api/ProfileApiService"
 import { StudentContext, type Student } from "./StudentContext"
 
-// Remembers who is signed in on this browser, so a refresh doesn't sign them out.
-// The student's actual profile is saved by the backend.
 const CURRENT_KEY = "bookbuddy-student"
 
-function loadStudent(): Student | null {
-  const saved = localStorage.getItem(CURRENT_KEY)
-  return saved ? JSON.parse(saved) : null
-}
-
 function StudentProvider({ children }: { children: ReactNode }) {
-  const [student, setStudent] = useState<Student | null>(loadStudent)
+  const [student, setStudent] = useState<Student | null>(null)
+  const [checkingAuth, setCheckingAuth] = useState(true)
+
   const studentId = student?.id
 
-  // keep the browser's copy up to date
+  // Check WorkOS authentication when BookBuddy opens
   useEffect(() => {
-    if (student) localStorage.setItem(CURRENT_KEY, JSON.stringify(student))
-    else localStorage.removeItem(CURRENT_KEY)
-  }, [student])
-
-  // when the app opens, get the latest profile from the backend
-  useEffect(() => {
-    if (!studentId) return
     let ignore = false
+
+    async function checkAuth() {
+      try {
+        const response = await fetch("http://localhost:8000/auth/me", {
+          credentials: "include",
+        })
+
+        if (!response.ok) {
+          if (!ignore) {
+            setStudent(null)
+            localStorage.removeItem(CURRENT_KEY)
+          }
+          return
+        }
+
+        // WorkOS session is valid; load the profile linked to this account
+        const profileResponse = await fetch("http://localhost:8000/auth/student", {
+          credentials: "include",
+        })
+
+        if (!profileResponse.ok) {
+          throw new Error("Failed to load student profile")
+        }
+
+        const data: { student: Student | null } = await profileResponse.json()
+
+        if (!ignore) {
+          setStudent(data.student)
+        }
+      } catch (error) {
+        console.error("Authentication check failed:", error)
+        if (!ignore) setStudent(null)
+      } finally {
+        if (!ignore) setCheckingAuth(false)
+      }
+    }
+
+    checkAuth()
+
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  // Save student information in this browser
+  useEffect(() => {
+    if (checkingAuth) return
+
+    if (student) {
+      localStorage.setItem(CURRENT_KEY, JSON.stringify(student))
+    } else {
+      localStorage.removeItem(CURRENT_KEY)
+    }
+  }, [student, checkingAuth])
+
+  // Get the latest student profile from the backend
+  useEffect(() => {
+    if (checkingAuth || !studentId) return
+
+    let ignore = false
+
     ProfileApiService.getProfile(studentId)
       .then((latest) => {
         if (!ignore) setStudent(latest)
       })
       .catch((e) => {
-        // the backend doesn't know this student (e.g. signed in before profiles were saved
-        // there): sign them out so they can sign in again. If the backend is just down, keep
-        // using the saved copy.
-        if (!ignore && e instanceof ApiError && e.status === 404) setStudent(null)
+        if (!ignore && e instanceof ApiError && e.status === 404) {
+          setStudent(null)
+        }
       })
+
     return () => {
       ignore = true
     }
-  }, [studentId])
+  }, [studentId, checkingAuth])
 
   async function signIn(name: string) {
+    const response = await fetch("http://localhost:8000/auth/me", {
+      credentials: "include",
+    })
+
+    if (!response.ok) {
+      throw new Error("Please sign in with WorkOS first.")
+    }
+
     setStudent(await ProfileApiService.signIn(name))
   }
 
@@ -53,8 +110,15 @@ function StudentProvider({ children }: { children: ReactNode }) {
     setStudent(null)
   }
 
+  // Don't show protected pages before authentication is checked
+  if (checkingAuth) {
+    return <div>Checking authentication...</div>
+  }
+
   return (
-    <StudentContext.Provider value={{ student, signIn, setStudent, updateStudent, clearStudent }}>
+    <StudentContext.Provider
+      value={{ student, signIn, setStudent, updateStudent, clearStudent }}
+    >
       {children}
     </StudentContext.Provider>
   )
