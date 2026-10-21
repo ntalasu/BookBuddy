@@ -12,6 +12,29 @@ const tabs = [
 function AppLayout() {
   const { student, clearStudent } = useLoggedInStudent()
 
+async function handleSignOut() {
+  try {
+    const response = await fetch("http://localhost:8000/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    })
+
+    if (!response.ok) {
+      throw new Error("Sign out failed")
+    }
+
+    const data: { logoutUrl: string | null } = await response.json()
+
+    clearStudent()
+
+    window.location.href =
+      data.logoutUrl || "http://localhost:5173/welcome"
+  } catch (error) {
+    console.error("Sign out failed:", error)
+    alert("Could not sign out. Please try again.")
+  }
+}
+
   return (
     <div className="min-h-screen bg-amber-50">
       <header className="bg-white shadow">
@@ -41,7 +64,10 @@ function AppLayout() {
               size="md"
             />
             <span className="font-semibold">{student.name}</span>
-            <button onClick={clearStudent} className="ml-2 text-sm text-gray-500 hover:text-gray-800">
+            <button
+              onClick={handleSignOut}
+              className="ml-2 text-sm text-gray-500 hover:text-gray-800"
+            >
               Sign out
             </button>
           </div>
