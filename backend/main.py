@@ -3,18 +3,21 @@ from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from services.google_books import search_books, get_book_details
+from fastapi.responses import RedirectResponse, JSONResponse
 from database import (
     init_db, save_book, get_saved_books, delete_book,
-    get_student, find_student_by_workos_id, create_student, update_student,
-    create_auth_session, get_auth_session, delete_auth_session
+    find_student_by_workos_id, create_student, update_student,
+    create_auth_session, get_auth_session, delete_auth_session,
+    get_workos_session_id
 )
 import requests
 import uuid
 import os
 from dotenv import load_dotenv
 from workos import WorkOSClient
-from fastapi.responses import RedirectResponse
 import secrets
+import base64
+import json
 
 load_dotenv()
 
@@ -83,9 +86,7 @@ def auth_login():
         redirect_uri=WORKOS_REDIRECT_URI,
         state=state,
     )
-
     response = RedirectResponse(url=authorization_url)
-
     response.set_cookie(
         key="workos_oauth_state",
         value=state,
@@ -94,7 +95,6 @@ def auth_login():
         samesite="lax",
         max_age=600,
     )
-
     return response
 # Handle the response from WorkOS after login
 @app.get("/auth/callback")
@@ -113,8 +113,19 @@ def auth_callback(request: Request, code: str, state: str):
     except Exception:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
-    # Create a session for the authenticated WorkOS user
-    session_token = create_auth_session(authentication.user.id)
+    # Extract the WorkOS session ID from the access token
+    payload = authentication.access_token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+
+    claims = json.loads(base64.urlsafe_b64decode(payload))
+
+    workos_session_id = claims.get("sid")
+
+    # Create a BookBuddy session linked to the WorkOS session
+    session_token = create_auth_session(
+        authentication.user.id,
+        workos_session_id
+    )
 
     response = RedirectResponse(
         url="http://localhost:5173/welcome"
@@ -177,15 +188,33 @@ def auth_student(workos_user_id: str = Depends(require_auth)):
 def auth_logout(request: Request):
     token = request.cookies.get("bookbuddy_session")
 
+    workos_session_id = None
+
     if token:
+        workos_session_id = get_workos_session_id(token)
         delete_auth_session(token)
 
-    response = RedirectResponse(
-        url="http://localhost:5173/welcome",
-        status_code=303
-    )
+    logout_url = None
 
-    response.delete_cookie("bookbuddy_session")
+    if workos_session_id:
+        try:
+            logout_url = workos.user_management.get_logout_url(
+                session_id=workos_session_id,
+                return_to="http://localhost:5173/welcome"
+            )
+        except Exception as error:
+            print("WorkOS logout URL error:", error)
+
+    response = JSONResponse({
+        "message": "Signed out successfully",
+        "logoutUrl": logout_url
+    })
+
+    response.delete_cookie(
+        key="bookbuddy_session",
+        path="/",
+        samesite="lax"
+    )
 
     return response
 
@@ -217,23 +246,58 @@ def get_book(book_id: str):
         )
 
 
-# Save a book to the bookshelf
+# Save a book to the authenticated student's bookshelf
 @app.post("/bookshelf")
-def add_to_bookshelf(book: Book):
-    save_book(book.model_dump())
+def add_to_bookshelf(
+        book: Book,
+        workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student profile not found."
+        )
+
+    save_book(book.model_dump(), student["id"])
 
     return {
         "message": "Book saved successfully!"
     }
 
+
+# Get only the authenticated student's saved books
 @app.get("/bookshelf")
-def get_bookshelf():
-    return get_saved_books()
+def get_bookshelf(
+        workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
 
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student profile not found."
+        )
+
+    return get_saved_books(student["id"])
+
+
+# Remove a book from the authenticated student's bookshelf
 @app.delete("/bookshelf/{book_id}")
-def remove_from_bookshelf(book_id: str):
+def remove_from_bookshelf(
+        book_id: str,
+        workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
 
-    deleted = delete_book(book_id)
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student profile not found."
+        )
+
+    deleted = delete_book(book_id, student["id"])
 
     if not deleted:
         raise HTTPException(
@@ -241,7 +305,9 @@ def remove_from_bookshelf(book_id: str):
             detail="Book not found in bookshelf."
         )
 
-    return {"message": "Book removed successfully!"}
+    return {
+        "message": "Book removed successfully!"
+    }
 
 # Student model (profile + reading buddy customization)
 class Student(BaseModel):

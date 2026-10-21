@@ -1,19 +1,24 @@
-import sqlite3
-from pathlib import Path
+import hashlib
 import secrets
+import sqlite3
+import time
+from pathlib import Path
+
 
 DATABASE_PATH = Path(__file__).resolve().parent / "books.db"
 
 
 def get_connection():
-    connection = sqlite3.connect(DATABASE_PATH)
+    connection = sqlite3.connect(DATABASE_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout = 30000")
     return connection
 
 
 def init_db():
     connection = get_connection()
 
+    # Store book information
     connection.execute("""
         CREATE TABLE IF NOT EXISTS bookshelf (
             id TEXT PRIMARY KEY,
@@ -24,9 +29,21 @@ def init_db():
             page_count INTEGER,
             published_date TEXT,
             categories TEXT
-       )
-   """)
+        )
+    """)
 
+    # Connect saved books to individual students
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS student_bookshelf (
+            student_id TEXT NOT NULL,
+            book_id TEXT NOT NULL,
+            PRIMARY KEY (student_id, book_id),
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            FOREIGN KEY (book_id) REFERENCES bookshelf(id)
+        )
+    """)
+
+    # Store student profiles
     connection.execute("""
         CREATE TABLE IF NOT EXISTS students (
             id TEXT PRIMARY KEY,
@@ -56,9 +73,9 @@ def init_db():
         )
 
     connection.execute("""
-                       CREATE UNIQUE INDEX IF NOT EXISTS idx_students_workos_user
-                           ON students(workos_user_id)
-                       """)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_students_workos_user
+        ON students(workos_user_id)
+    """)
 
     # Store authenticated user sessions
     connection.execute("""
@@ -69,15 +86,27 @@ def init_db():
         )
     """)
 
+    # Add WorkOS session IDs to existing databases
+    columns = [
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(auth_sessions)").fetchall()
+    ]
+
+    if "workos_session_id" not in columns:
+        connection.execute(
+            "ALTER TABLE auth_sessions ADD COLUMN workos_session_id TEXT"
+        )
+
     connection.commit()
     connection.close()
 
 
-def save_book(book):
+def save_book(book, student_id):
     connection = get_connection()
 
+    # Save book details if they are not already stored
     connection.execute("""
-                       INSERT OR IGNORE INTO bookshelf (
+        INSERT OR IGNORE INTO bookshelf (
             id,
             title,
             authors,
@@ -88,26 +117,37 @@ def save_book(book):
             categories
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                       """, (
-                           book["id"],
-                           book["title"],
-                           ", ".join(book.get("authors", [])),
-                           book.get("description", ""),
-                           book.get("thumbnail"),
-                           book.get("pageCount"),
-                           book.get("publishedDate", ""),
-                           ", ".join(book.get("categories", []))
-                       ))
+    """, (
+        book["id"],
+        book["title"],
+        ", ".join(book.get("authors", [])),
+        book.get("description", ""),
+        book.get("thumbnail"),
+        book.get("pageCount"),
+        book.get("publishedDate", ""),
+        ", ".join(book.get("categories", []))
+    ))
+
+    # Add the book to this student's bookshelf
+    connection.execute("""
+        INSERT OR IGNORE INTO student_bookshelf (student_id, book_id)
+        VALUES (?, ?)
+    """, (student_id, book["id"]))
 
     connection.commit()
     connection.close()
 
-def get_saved_books():
+
+def get_saved_books(student_id):
     connection = get_connection()
 
-    rows = connection.execute(
-        "SELECT * FROM bookshelf"
-    ).fetchall()
+    rows = connection.execute("""
+        SELECT bookshelf.*
+        FROM bookshelf
+        JOIN student_bookshelf
+            ON bookshelf.id = student_bookshelf.book_id
+        WHERE student_bookshelf.student_id = ?
+    """, (student_id,)).fetchall()
 
     connection.close()
 
@@ -127,17 +167,23 @@ def get_saved_books():
 
     return books
 
-def delete_book(book_id):
+
+def delete_book(book_id, student_id):
     connection = get_connection()
-    cursor = connection.execute(
-        "DELETE FROM bookshelf WHERE id = ?",
-        (book_id,)
-    )
+
+    cursor = connection.execute("""
+        DELETE FROM student_bookshelf
+        WHERE book_id = ? AND student_id = ?
+    """, (book_id, student_id))
+
     connection.commit()
+
     deleted = cursor.rowcount > 0
+
     connection.close()
 
     return deleted
+
 
 # Frontend (camelCase) field name -> students table column
 STUDENT_COLUMNS = {
@@ -199,13 +245,10 @@ def find_student_by_workos_id(workos_user_id):
 def create_student(student_id, name, workos_user_id):
     connection = get_connection()
 
-    connection.execute(
-        """
+    connection.execute("""
         INSERT INTO students (id, name, workos_user_id)
         VALUES (?, ?, ?)
-        """,
-        (student_id, name, workos_user_id)
-    )
+    """, (student_id, name, workos_user_id))
 
     connection.commit()
     connection.close()
@@ -214,63 +257,91 @@ def create_student(student_id, name, workos_user_id):
 
 
 def update_student(student_id, changes):
-    # changes uses frontend field names, e.g. {"hatId": "crown", "interests": ["Dinosaurs"]}
+    # Changes use frontend field names
+    # Example: {"hatId": "crown", "interests": ["Dinosaurs"]}
+
     columns = []
     values = []
 
     for field, value in changes.items():
         if field == "interests":
             value = ", ".join(value)
+
         columns.append(f"{STUDENT_COLUMNS[field]} = ?")
         values.append(value)
 
     if columns:
         connection = get_connection()
+
         connection.execute(
             f"UPDATE students SET {', '.join(columns)} WHERE id = ?",
             (*values, student_id)
         )
+
         connection.commit()
         connection.close()
 
     return get_student(student_id)
 
-import hashlib
-import time
 
-
+# Authentication sessions
 def hash_session(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_auth_session(workos_user_id):
+def create_auth_session(workos_user_id, workos_session_id):
     token = secrets.token_urlsafe(32)
-    expires_at = int(time.time()) + 86400  # 24 hours
+    expires_at = int(time.time()) + 86400
 
     connection = get_connection()
     connection.execute(
         """
-        INSERT INTO auth_sessions (session_hash, workos_user_id, expires_at)
-        VALUES (?, ?, ?)
+        INSERT INTO auth_sessions (
+            session_hash,
+            workos_user_id,
+            expires_at,
+            workos_session_id
+        )
+        VALUES (?, ?, ?, ?)
         """,
-        (hash_session(token), workos_user_id, expires_at)
+        (
+            hash_session(token),
+            workos_user_id,
+            expires_at,
+            workos_session_id
+        )
     )
     connection.commit()
     connection.close()
 
     return token
 
+def get_workos_session_id(token):
+    connection = get_connection()
+
+    row = connection.execute(
+        """
+        SELECT workos_session_id
+        FROM auth_sessions
+        WHERE session_hash = ?
+        """,
+        (hash_session(token),)
+    ).fetchone()
+
+    connection.close()
+
+    return row["workos_session_id"] if row else None
 
 def get_auth_session(token):
     connection = get_connection()
-    row = connection.execute(
-        """
+
+    row = connection.execute("""
         SELECT workos_user_id
         FROM auth_sessions
-        WHERE session_hash = ? AND expires_at > ?
-        """,
-        (hash_session(token), int(time.time()))
-    ).fetchone()
+        WHERE session_hash = ?
+          AND expires_at > ?
+    """, (hash_session(token), int(time.time()))).fetchone()
+
     connection.close()
 
     return row["workos_user_id"] if row else None
@@ -278,9 +349,11 @@ def get_auth_session(token):
 
 def delete_auth_session(token):
     connection = get_connection()
-    connection.execute(
-        "DELETE FROM auth_sessions WHERE session_hash = ?",
-        (hash_session(token),)
-    )
+
+    connection.execute("""
+        DELETE FROM auth_sessions
+        WHERE session_hash = ?
+    """, (hash_session(token),))
+
     connection.commit()
     connection.close()

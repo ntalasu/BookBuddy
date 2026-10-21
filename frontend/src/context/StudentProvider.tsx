@@ -1,123 +1,113 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { ApiError } from "../api/ApiClient"
 import { ProfileApiService } from "../api/ProfileApiService"
 import { StudentContext, type Student } from "./StudentContext"
-
-const CURRENT_KEY = "bookbuddy-student"
 
 function StudentProvider({ children }: { children: ReactNode }) {
   const [student, setStudent] = useState<Student | null>(null)
   const [checkingAuth, setCheckingAuth] = useState(true)
 
-  const studentId = student?.id
-
-  // Check WorkOS authentication when BookBuddy opens
+  // Load the student belonging to the authenticated WorkOS account
   useEffect(() => {
     let ignore = false
 
-    async function checkAuth() {
+    async function loadStudent() {
       try {
-        const response = await fetch("http://localhost:8000/auth/me", {
-          credentials: "include",
-        })
-
-        if (!response.ok) {
-          if (!ignore) {
-            setStudent(null)
-            localStorage.removeItem(CURRENT_KEY)
+        const response = await fetch(
+          "http://localhost:8000/auth/student",
+          {
+            credentials: "include",
           }
+        )
+
+        if (response.status === 401) {
+          if (!ignore) setStudent(null)
           return
         }
 
-        // WorkOS session is valid; load the profile linked to this account
-        const profileResponse = await fetch("http://localhost:8000/auth/student", {
-          credentials: "include",
-        })
-
-        if (!profileResponse.ok) {
-          throw new Error("Failed to load student profile")
+        if (!response.ok) {
+          throw new Error("Failed to check authentication")
         }
 
-        const data: { student: Student | null } = await profileResponse.json()
+        const data: { student: Student | null } =
+          await response.json()
+
+        let currentStudent = data.student
+
+        // Create a profile for a new WorkOS account
+        if (!currentStudent) {
+          currentStudent = await ProfileApiService.signIn("Reader")
+        }
 
         if (!ignore) {
-          setStudent(data.student)
+          setStudent(currentStudent)
         }
       } catch (error) {
-        console.error("Authentication check failed:", error)
-        if (!ignore) setStudent(null)
+        console.error("Failed to load student:", error)
+
+        if (!ignore) {
+          setStudent(null)
+        }
       } finally {
-        if (!ignore) setCheckingAuth(false)
+        if (!ignore) {
+          setCheckingAuth(false)
+        }
       }
     }
 
-    checkAuth()
+    loadStudent()
 
     return () => {
       ignore = true
     }
   }, [])
 
-  // Save student information in this browser
-  useEffect(() => {
-    if (checkingAuth) return
-
-    if (student) {
-      localStorage.setItem(CURRENT_KEY, JSON.stringify(student))
-    } else {
-      localStorage.removeItem(CURRENT_KEY)
-    }
-  }, [student, checkingAuth])
-
-  // Get the latest student profile from the backend
-  useEffect(() => {
-    if (checkingAuth || !studentId) return
-
-    let ignore = false
-
-    ProfileApiService.getProfile(studentId)
-      .then((latest) => {
-        if (!ignore) setStudent(latest)
-      })
-      .catch((e) => {
-        if (!ignore && e instanceof ApiError && e.status === 404) {
-          setStudent(null)
-        }
-      })
-
-    return () => {
-      ignore = true
-    }
-  }, [studentId, checkingAuth])
-
+  // Only allow profile creation for authenticated users
   async function signIn(name: string) {
-    const response = await fetch("http://localhost:8000/auth/me", {
-      credentials: "include",
-    })
+    const response = await fetch(
+      "http://localhost:8000/auth/me",
+      {
+        credentials: "include",
+      }
+    )
 
     if (!response.ok) {
       throw new Error("Please sign in with WorkOS first.")
     }
 
-    setStudent(await ProfileApiService.signIn(name))
+    const currentStudent = await ProfileApiService.signIn(name)
+
+    setStudent(currentStudent)
   }
 
   function updateStudent(changes: Partial<Student>) {
-    setStudent((s) => (s ? { ...s, ...changes } : s))
+    setStudent((current) =>
+      current ? { ...current, ...changes } : current
+    )
   }
 
   function clearStudent() {
     setStudent(null)
   }
 
-  // Don't show protected pages before authentication is checked
   if (checkingAuth) {
-    return <div>Checking authentication...</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-amber-50">
+        <p className="text-lg font-semibold text-orange-600">
+          Loading BookBuddy...
+        </p>
+      </div>
+    )
   }
 
   return (
     <StudentContext.Provider
-      value={{ student, signIn, setStudent, updateStudent, clearStudent }}
+      value={{
+        student,
+        signIn,
+        setStudent,
+        updateStudent,
+        clearStudent,
+      }}
     >
       {children}
     </StudentContext.Provider>
