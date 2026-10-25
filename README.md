@@ -84,5 +84,6 @@ npm install                       # only needed if someone added a new package
 ## Notes
 - Run `npm` commands inside `frontend/` and Python/`uvicorn` commands inside `backend/` (with the virtual environment activated).
 - Use `http://localhost:5173`, not `127.0.0.1:5173` — sign-in redirects and cookies are set up for `localhost`.
-- Sign-in and student profiles always use the real backend. Book recommendations, chat replies, and badges still use fake data for now (controlled by `USE_MOCK` in `frontend/src/api/ApiClient.ts`).
+- Sign-in, student profiles, and reading progress (minutes, streaks, badges) always use the real backend. Book recommendations and chat replies still use fake data for now (controlled by `USE_MOCK` in `frontend/src/api/ApiClient.ts`).
+- Badges are defined in `backend/services/badges.py`. To add one, add a line to `BADGES`.
 - The frontend talks to the backend at `http://localhost:8000` by default.

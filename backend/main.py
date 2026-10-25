@@ -3,12 +3,14 @@ from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from services.google_books import search_books, get_book_details
+from services.badges import get_progress
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import (
     init_db, save_book, get_saved_books, delete_book,
     find_student_by_workos_id, create_student, update_student,
     create_auth_session, get_auth_session, delete_auth_session,
-    get_workos_session_id
+    get_workos_session_id,
+    add_reading_log, get_reading_logs
 )
 import requests
 import uuid
@@ -18,6 +20,7 @@ from workos import WorkOSClient
 import secrets
 import base64
 import json
+from datetime import datetime, timezone
 
 load_dotenv()
 
@@ -408,3 +411,51 @@ def update_student_profile(
         student_id,
         changes.model_dump(exclude_unset=True, exclude_none=True)
     )
+
+
+class ReadingLogRequest(BaseModel):
+    studentId: str
+    minutes: int = Field(ge=1, le=600)
+    # From JavaScript's getTimezoneOffset(), so badges use the student's own clock
+    utcOffsetMinutes: int = Field(default=0, ge=-840, le=840)
+
+
+# Save a reading session for the logged-in student
+@app.post("/reading-logs")
+def create_reading_log(
+        request: ReadingLogRequest,
+        workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
+
+    if not student or student["id"] != request.studentId:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found."
+        )
+
+    return add_reading_log(
+        str(uuid.uuid4()),
+        student["id"],
+        request.minutes,
+        datetime.now(timezone.utc).isoformat(),
+        request.utcOffsetMinutes
+    )
+
+
+# Total minutes, streaks, and badges for the logged-in student
+@app.get("/students/{student_id}/progress")
+def get_student_progress(
+        student_id: str,
+        utcOffsetMinutes: int = 0,
+        workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
+
+    if not student or student["id"] != student_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found."
+        )
+
+    return get_progress(get_reading_logs(student_id), utcOffsetMinutes)

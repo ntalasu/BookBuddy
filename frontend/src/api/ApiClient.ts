@@ -2,8 +2,8 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000"
 
-// While true, the book, progress, and chat services return fake data instead of calling the backend.
-// (Profiles always use the real backend.) Set VITE_USE_MOCK=false in frontend/.env once the rest is built.
+// While true, the book and chat services return fake data instead of calling the backend.
+// (Profiles and reading progress always use the real backend.) Set this to false once the rest is built.
 export const USE_MOCK = true
 
 let authToken: string | null = null

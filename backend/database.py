@@ -77,6 +77,23 @@ def init_db():
         ON students(workos_user_id)
     """)
 
+    # Store every reading session a student logs
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS reading_logs (
+            id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            minutes_read INTEGER NOT NULL,
+            logged_at TEXT NOT NULL,
+            utc_offset_minutes INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (student_id) REFERENCES students(id)
+        )
+    """)
+
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_reading_logs_student
+        ON reading_logs(student_id)
+    """)
+
     # Store authenticated user sessions
     connection.execute("""
         CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -282,6 +299,64 @@ def update_student(student_id, changes):
         connection.close()
 
     return get_student(student_id)
+
+
+# Reading logs
+def reading_log_from_row(row):
+    return {
+        "id": row["id"],
+        "studentId": row["student_id"],
+        "minutesRead": row["minutes_read"],
+        "loggedAt": row["logged_at"],
+        "utcOffsetMinutes": row["utc_offset_minutes"]
+    }
+
+
+def add_reading_log(log_id, student_id, minutes, logged_at, utc_offset_minutes):
+    connection = get_connection()
+
+    connection.execute("""
+        INSERT INTO reading_logs (
+            id,
+            student_id,
+            minutes_read,
+            logged_at,
+            utc_offset_minutes
+        )
+        VALUES (?, ?, ?, ?, ?)
+    """, (log_id, student_id, minutes, logged_at, utc_offset_minutes))
+
+    # Keep the running total on the student profile up to date
+    connection.execute("""
+        UPDATE students
+        SET reading_minutes = reading_minutes + ?
+        WHERE id = ?
+    """, (minutes, student_id))
+
+    connection.commit()
+
+    row = connection.execute(
+        "SELECT * FROM reading_logs WHERE id = ?",
+        (log_id,)
+    ).fetchone()
+
+    connection.close()
+
+    return reading_log_from_row(row)
+
+
+def get_reading_logs(student_id):
+    connection = get_connection()
+
+    rows = connection.execute("""
+        SELECT * FROM reading_logs
+        WHERE student_id = ?
+        ORDER BY logged_at
+    """, (student_id,)).fetchall()
+
+    connection.close()
+
+    return [reading_log_from_row(row) for row in rows]
 
 
 # Authentication sessions
