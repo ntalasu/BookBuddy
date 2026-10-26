@@ -73,6 +73,8 @@ export const hats: Accessory[] = [
   { id: "gradcap", emoji: "🎓", name: "Grad Cap", unlockBadgeId: "2" },
   { id: "tophat", emoji: "🎩", name: "Top Hat", unlockBadgeId: "3" },
   { id: "crown", emoji: "👑", name: "Crown", unlockBadgeId: "4" },
+  { id: "sunhat", emoji: "👒", name: "Sun Hat", unlockBadgeId: "14" },
+  { id: "helmet", emoji: "⛑️", name: "Explorer Helmet", unlockBadgeId: "11" },
 ]
 
 // held in the bottom corner
@@ -84,6 +86,14 @@ export const items: Accessory[] = [
   { id: "book", emoji: "📖", name: "Book", unlockBadgeId: "1" },
   { id: "wand", emoji: "🪄", name: "Magic Wand", unlockBadgeId: "3" },
   { id: "trophy", emoji: "🏆", name: "Trophy", unlockBadgeId: "4" },
+  { id: "flashlight", emoji: "🔦", name: "Flashlight", unlockBadgeId: "5" },
+  { id: "telescope", emoji: "🔭", name: "Telescope", unlockBadgeId: "6" },
+  { id: "rocket", emoji: "🚀", name: "Rocket", unlockBadgeId: "7" },
+  { id: "unicorn", emoji: "🦄", name: "Unicorn", unlockBadgeId: "8" },
+  { id: "books", emoji: "📚", name: "Book Stack", unlockBadgeId: "9" },
+  { id: "moon", emoji: "🌙", name: "Moon", unlockBadgeId: "12" },
+  { id: "teddy", emoji: "🧸", name: "Teddy Bear", unlockBadgeId: "13" },
+  { id: "sprout", emoji: "🌱", name: "Sprout", unlockBadgeId: "16" },
 ]
 
 export function findCharacter(id: string) {

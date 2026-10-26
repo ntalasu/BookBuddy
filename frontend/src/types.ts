@@ -16,11 +16,22 @@ export type Recommendation = {
   book: Book
 }
 
+// what a badge counts
+export type BadgeKind =
+  | "minutes" // total minutes read
+  | "streak" // longest number of days read in a row
+  | "longSession" // most minutes read in one session
+  | "bedtime" // sessions logged after 7pm
+  | "earlyBird" // sessions logged before 9am
+  | "weekend" // Saturdays and Sundays read on
+  | "daysRead" // different days read on
+
 export type Badge = {
   id: string
   name: string
   criteria: string
-  minutesNeeded: number
+  kind: BadgeKind
+  goal: number // how much of that kind is needed, e.g. 60 minutes or 7 days
   emoji: string
 }
 
@@ -29,10 +40,14 @@ export type ReadingLog = {
   studentId: string
   minutesRead: number
   loggedAt: string
+  utcOffsetMinutes: number
 }
 
 export type ProgressResponse = {
   totalMinutes: number
+  currentStreak: number // days in a row, counting today or yesterday
+  longestStreak: number
+  readToday: boolean
   badges: Badge[] // every badge, so locked ones can be shown too
   earnedBadgeIds: string[]
 }

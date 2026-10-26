@@ -1,4 +1,4 @@
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = "http://localhost:8000";
 
 export interface Book {
   id: string;
@@ -11,6 +11,7 @@ export interface Book {
   categories?: string[];
 }
 
+// Search books using Google Books API
 export async function searchBooks(query: string): Promise<Book[]> {
   const response = await fetch(
     `${API_URL}/books/search?query=${encodeURIComponent(query)}`
@@ -23,6 +24,7 @@ export async function searchBooks(query: string): Promise<Book[]> {
   return response.json();
 }
 
+// Get details about a specific book
 export async function getBookDetails(bookId: string): Promise<Book> {
   const response = await fetch(
     `${API_URL}/books/${encodeURIComponent(bookId)}`
@@ -35,9 +37,11 @@ export async function getBookDetails(bookId: string): Promise<Book> {
   return response.json();
 }
 
+// Save a book to the authenticated user's bookshelf
 export async function saveBook(book: Book): Promise<void> {
   const response = await fetch(`${API_URL}/bookshelf`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -49,8 +53,11 @@ export async function saveBook(book: Book): Promise<void> {
   }
 }
 
+// Retrieve saved books
 export async function getSavedBooks(): Promise<Book[]> {
-  const response = await fetch(`${API_URL}/bookshelf`);
+  const response = await fetch(`${API_URL}/bookshelf`, {
+    credentials: "include",
+  });
 
   if (!response.ok) {
     throw new Error("Failed to retrieve saved books");
@@ -59,11 +66,13 @@ export async function getSavedBooks(): Promise<Book[]> {
   return response.json();
 }
 
+// Remove a book from the bookshelf
 export async function deleteBook(bookId: string): Promise<void> {
   const response = await fetch(
     `${API_URL}/bookshelf/${encodeURIComponent(bookId)}`,
     {
       method: "DELETE",
+      credentials: "include",
     }
   );
 

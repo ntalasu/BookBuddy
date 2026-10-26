@@ -20,6 +20,17 @@ type Book = {
   publishedDate: string
 }
 
+const recommendedTopics = [
+  "Matilda",
+  "Charlotte's Web",
+  "The Wild Robot",
+  "Magic Tree House",
+  "Dog Man",
+  "The Very Hungry Caterpillar",
+  "National Geographic Kids",
+  "Percy Jackson",
+]
+
 const spineColors = [
   "bg-red-800",
   "bg-blue-800",
@@ -73,6 +84,38 @@ function BookDiscoveryView() {
   const [error, setError] = useState("")
   const [detailsError, setDetailsError] = useState("")
 
+  const [, setShowingRecommendations] = useState(true)
+
+  async function loadRecommendations() {
+    setLoading(true)
+    setError("")
+    setSelectedBook(null)
+    setShowingRecommendations(true)
+
+    try {
+      const results = await Promise.all(
+        recommendedTopics.map((topic) => searchBooks(topic))
+      )
+
+      const uniqueBooks = new Map<string, Book>()
+
+      results.forEach((bookList) => {
+        const book = bookList[0]
+
+        if (book) {
+          uniqueBooks.set(book.id, formatBook(book))
+        }
+      })
+
+      setBooks(Array.from(uniqueBooks.values()))
+    } catch (err) {
+      console.error("Error loading recommendations:", err)
+      setError("Unable to load recommended books.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function loadSavedBooks() {
     try {
       const results = await getSavedBooks()
@@ -124,8 +167,11 @@ function BookDiscoveryView() {
   }
 
   // Search for books using Google Books API
-  async function handleSearch(searchQuery: string) {
-    if (!searchQuery.trim()) return
+async function handleSearch(searchQuery: string) {
+  if (!searchQuery.trim()) {
+    await loadRecommendations()
+    return
+  }
 
     setLoading(true)
     setError("")
@@ -224,7 +270,14 @@ useEffect(() => {
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value
+            setQuery(value)
+
+            if (!value.trim()) {
+              void loadRecommendations()
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") handleSearch(query)
           }}

@@ -1,18 +1,24 @@
+import hashlib
+import secrets
 import sqlite3
+import time
 from pathlib import Path
+
 
 DATABASE_PATH = Path(__file__).resolve().parent / "books.db"
 
 
 def get_connection():
-    connection = sqlite3.connect(DATABASE_PATH)
+    connection = sqlite3.connect(DATABASE_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout = 30000")
     return connection
 
 
 def init_db():
     connection = get_connection()
 
+    # Store book information
     connection.execute("""
         CREATE TABLE IF NOT EXISTS bookshelf (
             id TEXT PRIMARY KEY,
@@ -23,12 +29,25 @@ def init_db():
             page_count INTEGER,
             published_date TEXT,
             categories TEXT
-       )
-   """)
+        )
+    """)
 
+    # Connect saved books to individual students
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS student_bookshelf (
+            student_id TEXT NOT NULL,
+            book_id TEXT NOT NULL,
+            PRIMARY KEY (student_id, book_id),
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            FOREIGN KEY (book_id) REFERENCES bookshelf(id)
+        )
+    """)
+
+    # Store student profiles
     connection.execute("""
         CREATE TABLE IF NOT EXISTS students (
             id TEXT PRIMARY KEY,
+            workos_user_id TEXT UNIQUE,
             name TEXT NOT NULL,
             age INTEGER NOT NULL DEFAULT 8,
             reading_level TEXT NOT NULL DEFAULT 'Grade 3',
@@ -42,15 +61,69 @@ def init_db():
         )
     """)
 
+    # Add WorkOS user ID to existing student records
+    columns = [
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(students)").fetchall()
+    ]
+
+    if "workos_user_id" not in columns:
+        connection.execute(
+            "ALTER TABLE students ADD COLUMN workos_user_id TEXT"
+        )
+
+    connection.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_students_workos_user
+        ON students(workos_user_id)
+    """)
+
+    # Store every reading session a student logs
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS reading_logs (
+            id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            minutes_read INTEGER NOT NULL,
+            logged_at TEXT NOT NULL,
+            utc_offset_minutes INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (student_id) REFERENCES students(id)
+        )
+    """)
+
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_reading_logs_student
+        ON reading_logs(student_id)
+    """)
+
+    # Store authenticated user sessions
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            session_hash TEXT PRIMARY KEY,
+            workos_user_id TEXT NOT NULL,
+            expires_at INTEGER NOT NULL
+        )
+    """)
+
+    # Add WorkOS session IDs to existing databases
+    columns = [
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(auth_sessions)").fetchall()
+    ]
+
+    if "workos_session_id" not in columns:
+        connection.execute(
+            "ALTER TABLE auth_sessions ADD COLUMN workos_session_id TEXT"
+        )
+
     connection.commit()
     connection.close()
 
 
-def save_book(book):
+def save_book(book, student_id):
     connection = get_connection()
 
+    # Save book details if they are not already stored
     connection.execute("""
-                       INSERT OR IGNORE INTO bookshelf (
+        INSERT OR IGNORE INTO bookshelf (
             id,
             title,
             authors,
@@ -61,26 +134,37 @@ def save_book(book):
             categories
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                       """, (
-                           book["id"],
-                           book["title"],
-                           ", ".join(book.get("authors", [])),
-                           book.get("description", ""),
-                           book.get("thumbnail"),
-                           book.get("pageCount"),
-                           book.get("publishedDate", ""),
-                           ", ".join(book.get("categories", []))
-                       ))
+    """, (
+        book["id"],
+        book["title"],
+        ", ".join(book.get("authors", [])),
+        book.get("description", ""),
+        book.get("thumbnail"),
+        book.get("pageCount"),
+        book.get("publishedDate", ""),
+        ", ".join(book.get("categories", []))
+    ))
+
+    # Add the book to this student's bookshelf
+    connection.execute("""
+        INSERT OR IGNORE INTO student_bookshelf (student_id, book_id)
+        VALUES (?, ?)
+    """, (student_id, book["id"]))
 
     connection.commit()
     connection.close()
 
-def get_saved_books():
+
+def get_saved_books(student_id):
     connection = get_connection()
 
-    rows = connection.execute(
-        "SELECT * FROM bookshelf"
-    ).fetchall()
+    rows = connection.execute("""
+        SELECT bookshelf.*
+        FROM bookshelf
+        JOIN student_bookshelf
+            ON bookshelf.id = student_bookshelf.book_id
+        WHERE student_bookshelf.student_id = ?
+    """, (student_id,)).fetchall()
 
     connection.close()
 
@@ -100,17 +184,23 @@ def get_saved_books():
 
     return books
 
-def delete_book(book_id):
+
+def delete_book(book_id, student_id):
     connection = get_connection()
-    cursor = connection.execute(
-        "DELETE FROM bookshelf WHERE id = ?",
-        (book_id,)
-    )
+
+    cursor = connection.execute("""
+        DELETE FROM student_bookshelf
+        WHERE book_id = ? AND student_id = ?
+    """, (book_id, student_id))
+
     connection.commit()
+
     deleted = cursor.rowcount > 0
+
     connection.close()
 
     return deleted
+
 
 # Frontend (camelCase) field name -> students table column
 STUDENT_COLUMNS = {
@@ -156,12 +246,12 @@ def get_student(student_id):
     return student_from_row(row) if row else None
 
 
-def find_student_by_name(name):
+def find_student_by_workos_id(workos_user_id):
     connection = get_connection()
 
     row = connection.execute(
-        "SELECT * FROM students WHERE LOWER(name) = LOWER(?)",
-        (name,)
+        "SELECT * FROM students WHERE workos_user_id = ?",
+        (workos_user_id,)
     ).fetchone()
 
     connection.close()
@@ -169,13 +259,13 @@ def find_student_by_name(name):
     return student_from_row(row) if row else None
 
 
-def create_student(student_id, name):
+def create_student(student_id, name, workos_user_id):
     connection = get_connection()
 
-    connection.execute(
-        "INSERT INTO students (id, name) VALUES (?, ?)",
-        (student_id, name)
-    )
+    connection.execute("""
+        INSERT INTO students (id, name, workos_user_id)
+        VALUES (?, ?, ?)
+    """, (student_id, name, workos_user_id))
 
     connection.commit()
     connection.close()
@@ -184,23 +274,161 @@ def create_student(student_id, name):
 
 
 def update_student(student_id, changes):
-    # changes uses frontend field names, e.g. {"hatId": "crown", "interests": ["Dinosaurs"]}
+    # Changes use frontend field names
+    # Example: {"hatId": "crown", "interests": ["Dinosaurs"]}
+
     columns = []
     values = []
 
     for field, value in changes.items():
         if field == "interests":
             value = ", ".join(value)
+
         columns.append(f"{STUDENT_COLUMNS[field]} = ?")
         values.append(value)
 
     if columns:
         connection = get_connection()
+
         connection.execute(
             f"UPDATE students SET {', '.join(columns)} WHERE id = ?",
             (*values, student_id)
         )
+
         connection.commit()
         connection.close()
 
     return get_student(student_id)
+
+
+# Reading logs
+def reading_log_from_row(row):
+    return {
+        "id": row["id"],
+        "studentId": row["student_id"],
+        "minutesRead": row["minutes_read"],
+        "loggedAt": row["logged_at"],
+        "utcOffsetMinutes": row["utc_offset_minutes"]
+    }
+
+
+def add_reading_log(log_id, student_id, minutes, logged_at, utc_offset_minutes):
+    connection = get_connection()
+
+    connection.execute("""
+        INSERT INTO reading_logs (
+            id,
+            student_id,
+            minutes_read,
+            logged_at,
+            utc_offset_minutes
+        )
+        VALUES (?, ?, ?, ?, ?)
+    """, (log_id, student_id, minutes, logged_at, utc_offset_minutes))
+
+    # Keep the running total on the student profile up to date
+    connection.execute("""
+        UPDATE students
+        SET reading_minutes = reading_minutes + ?
+        WHERE id = ?
+    """, (minutes, student_id))
+
+    connection.commit()
+
+    row = connection.execute(
+        "SELECT * FROM reading_logs WHERE id = ?",
+        (log_id,)
+    ).fetchone()
+
+    connection.close()
+
+    return reading_log_from_row(row)
+
+
+def get_reading_logs(student_id):
+    connection = get_connection()
+
+    rows = connection.execute("""
+        SELECT * FROM reading_logs
+        WHERE student_id = ?
+        ORDER BY logged_at
+    """, (student_id,)).fetchall()
+
+    connection.close()
+
+    return [reading_log_from_row(row) for row in rows]
+
+
+# Authentication sessions
+def hash_session(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_auth_session(workos_user_id, workos_session_id):
+    token = secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + 86400
+
+    connection = get_connection()
+    connection.execute(
+        """
+        INSERT INTO auth_sessions (
+            session_hash,
+            workos_user_id,
+            expires_at,
+            workos_session_id
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            hash_session(token),
+            workos_user_id,
+            expires_at,
+            workos_session_id
+        )
+    )
+    connection.commit()
+    connection.close()
+
+    return token
+
+def get_workos_session_id(token):
+    connection = get_connection()
+
+    row = connection.execute(
+        """
+        SELECT workos_session_id
+        FROM auth_sessions
+        WHERE session_hash = ?
+        """,
+        (hash_session(token),)
+    ).fetchone()
+
+    connection.close()
+
+    return row["workos_session_id"] if row else None
+
+def get_auth_session(token):
+    connection = get_connection()
+
+    row = connection.execute("""
+        SELECT workos_user_id
+        FROM auth_sessions
+        WHERE session_hash = ?
+          AND expires_at > ?
+    """, (hash_session(token), int(time.time()))).fetchone()
+
+    connection.close()
+
+    return row["workos_user_id"] if row else None
+
+
+def delete_auth_session(token):
+    connection = get_connection()
+
+    connection.execute("""
+        DELETE FROM auth_sessions
+        WHERE session_hash = ?
+    """, (hash_session(token),))
+
+    connection.commit()
+    connection.close()
