@@ -75,6 +75,7 @@ export const hats: Accessory[] = [
   { id: "crown", emoji: "👑", name: "Crown", unlockBadgeId: "4" },
   { id: "sunhat", emoji: "👒", name: "Sun Hat", unlockBadgeId: "14" },
   { id: "helmet", emoji: "⛑️", name: "Explorer Helmet", unlockBadgeId: "11" },
+  { id: "star", emoji: "⭐", name: "Gold Star", unlockBadgeId: "20" },
 ]
 
 // held in the bottom corner
@@ -94,6 +95,8 @@ export const items: Accessory[] = [
   { id: "moon", emoji: "🌙", name: "Moon", unlockBadgeId: "12" },
   { id: "teddy", emoji: "🧸", name: "Teddy Bear", unlockBadgeId: "13" },
   { id: "sprout", emoji: "🌱", name: "Sprout", unlockBadgeId: "16" },
+  { id: "bookmark", emoji: "🔖", name: "Bookmark", unlockBadgeId: "18" },
+  { id: "dragon", emoji: "🐉", name: "Story Dragon", unlockBadgeId: "19" },
 ]
 
 export function findCharacter(id: string) {

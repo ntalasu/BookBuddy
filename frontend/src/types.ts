@@ -25,6 +25,7 @@ export type BadgeKind =
   | "earlyBird" // sessions logged before 9am
   | "weekend" // Saturdays and Sundays read on
   | "daysRead" // different days read on
+  | "booksFinished" // different books finished
 
 export type Badge = {
   id: string

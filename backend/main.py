@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import Literal
 from services.google_books import search_books, get_book_details
 from services.badges import get_progress
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -10,7 +11,8 @@ from database import (
     find_student_by_workos_id, create_student, update_student,
     create_auth_session, get_auth_session, delete_auth_session,
     get_workos_session_id,
-    add_reading_log, get_reading_logs
+    add_reading_log, get_reading_logs,
+    update_book_status, count_finished_books
 )
 import requests
 import uuid
@@ -312,6 +314,40 @@ def remove_from_bookshelf(
         "message": "Book removed successfully!"
     }
 
+class BookStatusUpdate(BaseModel):
+    status: Literal["want_to_read", "reading", "finished"]
+
+
+# Mark a saved book as want to read, reading, or finished
+@app.post("/bookshelf/{book_id}/status")
+def change_book_status(
+        book_id: str,
+        update: BookStatusUpdate,
+        workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student profile not found."
+        )
+
+    updated = update_book_status(book_id, student["id"], update.status)
+
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail="Book not found in bookshelf."
+        )
+
+    book = next(
+        (b for b in get_saved_books(student["id"]) if b["id"] == book_id),
+        None
+    )
+
+    return book
+
 # Student model (profile + reading buddy customization)
 class Student(BaseModel):
     id: str
@@ -458,4 +494,8 @@ def get_student_progress(
             detail="Student not found."
         )
 
-    return get_progress(get_reading_logs(student_id), utcOffsetMinutes)
+    return get_progress(
+        get_reading_logs(student_id),
+        utcOffsetMinutes,
+        count_finished_books(student_id)
+    )
