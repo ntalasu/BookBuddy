@@ -20,6 +20,9 @@ BADGES = [
     {"id": "15", "name": "Weekend Reader", "criteria": "Read on 4 weekend days", "kind": "weekend", "goal": 4, "emoji": "🛋️"},
     {"id": "16", "name": "Growing Reader", "criteria": "Read on 10 different days", "kind": "daysRead", "goal": 10, "emoji": "🌱"},
     {"id": "17", "name": "Mighty Oak", "criteria": "Read on 30 different days", "kind": "daysRead", "goal": 30, "emoji": "🌳"},
+    {"id": "18", "name": "First Book", "criteria": "Finish 1 book", "kind": "booksFinished", "goal": 1, "emoji": "📕"},
+    {"id": "19", "name": "Bookworm Pro", "criteria": "Finish 5 books", "kind": "booksFinished", "goal": 5, "emoji": "📗"},
+    {"id": "20", "name": "Super Reader", "criteria": "Finish 10 books", "kind": "booksFinished", "goal": 10, "emoji": "🏅"},
 ]
 
 
@@ -60,7 +63,7 @@ def get_streaks(days_read: set[date], today: date):
     return current_streak, longest_streak, read_today
 
 
-def get_progress(logs, utc_offset_minutes):
+def get_progress(logs, utc_offset_minutes, books_finished=0):
     local_times = [
         to_local_time(parse_utc(log["loggedAt"]), log["utcOffsetMinutes"])
         for log in logs
@@ -78,6 +81,7 @@ def get_progress(logs, utc_offset_minutes):
         "earlyBird": sum(1 for t in local_times if t.hour < 9),
         "weekend": len({d for d in days_read if d.weekday() >= 5}),
         "daysRead": len(days_read),
+        "booksFinished": books_finished,
     }
 
     return {

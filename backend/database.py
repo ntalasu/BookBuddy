@@ -2,6 +2,7 @@ import hashlib
 import secrets
 import sqlite3
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -43,6 +44,34 @@ def init_db():
         )
     """)
 
+    # Add reading status to existing bookshelves.
+    # Books saved before this was added start out as "want_to_read".
+    columns = [
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(student_bookshelf)").fetchall()
+    ]
+
+    if "status" not in columns:
+        connection.execute(
+            "ALTER TABLE student_bookshelf ADD COLUMN status TEXT NOT NULL DEFAULT 'want_to_read'"
+        )
+
+    if "started_at" not in columns:
+        connection.execute(
+            "ALTER TABLE student_bookshelf ADD COLUMN started_at TEXT"
+        )
+
+    if "finished_at" not in columns:
+        connection.execute(
+            "ALTER TABLE student_bookshelf ADD COLUMN finished_at TEXT"
+        )
+
+    # How many times the book has been finished, so rereading doesn't erase it
+    if "times_finished" not in columns:
+        connection.execute(
+            "ALTER TABLE student_bookshelf ADD COLUMN times_finished INTEGER NOT NULL DEFAULT 0"
+        )
+
     # Store student profiles
     connection.execute("""
         CREATE TABLE IF NOT EXISTS students (
@@ -75,6 +104,26 @@ def init_db():
     connection.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_students_workos_user
         ON students(workos_user_id)
+    """)
+
+    # Every book a student has ever finished. Kept even if the book is
+    # removed from their bookshelf, so finished-book badges stay earned.
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS finished_books (
+            student_id TEXT NOT NULL,
+            book_id TEXT NOT NULL,
+            first_finished_at TEXT NOT NULL,
+            PRIMARY KEY (student_id, book_id),
+            FOREIGN KEY (student_id) REFERENCES students(id)
+        )
+    """)
+
+    # Books finished before this table existed
+    connection.execute("""
+        INSERT OR IGNORE INTO finished_books (student_id, book_id, first_finished_at)
+        SELECT student_id, book_id, finished_at
+        FROM student_bookshelf
+        WHERE times_finished > 0 AND finished_at IS NOT NULL
     """)
 
     # Store every reading session a student logs
@@ -159,7 +208,12 @@ def get_saved_books(student_id):
     connection = get_connection()
 
     rows = connection.execute("""
-        SELECT bookshelf.*
+        SELECT
+            bookshelf.*,
+            student_bookshelf.status,
+            student_bookshelf.started_at,
+            student_bookshelf.finished_at,
+            student_bookshelf.times_finished
         FROM bookshelf
         JOIN student_bookshelf
             ON bookshelf.id = student_bookshelf.book_id
@@ -179,10 +233,64 @@ def get_saved_books(student_id):
             "thumbnail": row["thumbnail"],
             "pageCount": row["page_count"],
             "publishedDate": row["published_date"],
-            "categories": row["categories"].split(", ") if row["categories"] else []
+            "categories": row["categories"].split(", ") if row["categories"] else [],
+            "status": row["status"],
+            "startedAt": row["started_at"],
+            "finishedAt": row["finished_at"],
+            "timesFinished": row["times_finished"]
         })
 
     return books
+
+
+# Move a saved book to "want_to_read", "reading", or "finished".
+# Returns False if the book isn't on this student's bookshelf.
+def update_book_status(book_id, student_id, status):
+    now = datetime.now(timezone.utc).isoformat()
+    connection = get_connection()
+
+    if status == "reading":
+        # Starting (or rereading) a book: new start date, not finished yet
+        cursor = connection.execute("""
+            UPDATE student_bookshelf
+            SET status = 'reading', started_at = ?, finished_at = NULL
+            WHERE book_id = ? AND student_id = ?
+        """, (now, book_id, student_id))
+
+    elif status == "finished":
+        # Only count it once if they press "finished" twice
+        cursor = connection.execute("""
+            UPDATE student_bookshelf
+            SET
+                times_finished = times_finished + (CASE WHEN status = 'finished' THEN 0 ELSE 1 END),
+                status = 'finished',
+                started_at = COALESCE(started_at, ?),
+                finished_at = CASE WHEN status = 'finished' THEN finished_at ELSE ? END
+            WHERE book_id = ? AND student_id = ?
+        """, (now, now, book_id, student_id))
+
+        # Remember it for badges (only the first time this book is finished)
+        if cursor.rowcount > 0:
+            connection.execute("""
+                INSERT OR IGNORE INTO finished_books (student_id, book_id, first_finished_at)
+                VALUES (?, ?, ?)
+            """, (student_id, book_id, now))
+
+    else:
+        # Back to the "want to read" list
+        cursor = connection.execute("""
+            UPDATE student_bookshelf
+            SET status = 'want_to_read', started_at = NULL, finished_at = NULL
+            WHERE book_id = ? AND student_id = ?
+        """, (book_id, student_id))
+
+    connection.commit()
+
+    updated = cursor.rowcount > 0
+
+    connection.close()
+
+    return updated
 
 
 def delete_book(book_id, student_id):
@@ -299,6 +407,20 @@ def update_student(student_id, changes):
         connection.close()
 
     return get_student(student_id)
+
+
+# How many different books a student has ever finished
+def count_finished_books(student_id):
+    connection = get_connection()
+
+    count = connection.execute(
+        "SELECT COUNT(*) FROM finished_books WHERE student_id = ?",
+        (student_id,)
+    ).fetchone()[0]
+
+    connection.close()
+
+    return count
 
 
 # Reading logs
