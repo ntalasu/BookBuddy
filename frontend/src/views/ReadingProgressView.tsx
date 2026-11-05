@@ -20,8 +20,12 @@ function ReadingProgressView() {
 
   function logMinutes() {
     const minutes = Number(minutesInput)
-    if (minutes <= 0) return
-    logReading(minutes)
+
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 600) {
+      alert("Please enter a whole number between 1 and 600 minutes")
+      return
+    }
+    void logReading(minutes)
     setMinutesInput("")
   }
 
@@ -61,6 +65,9 @@ function ReadingProgressView() {
         <div className="flex gap-2">
           <input
             type="number"
+            min="1"
+            max="600"
+            step="1"
             value={minutesInput}
             onChange={(e) => setMinutesInput(e.target.value)}
             placeholder="e.g. 20"

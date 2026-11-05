@@ -26,7 +26,7 @@ function ReadingTimer({ onFinish }: Props) {
 
   function stop() {
     setRunning(false)
-    const minutes = Math.round(seconds / 60)
+    const minutes = Math.floor(seconds / 60)
     if (minutes > 0) onFinish(minutes)
     setSeconds(0)
   }
