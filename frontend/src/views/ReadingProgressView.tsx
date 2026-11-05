@@ -2,11 +2,13 @@ import { useState } from "react"
 import { useLoggedInStudent } from "../context/StudentContext"
 import { useReadingProgress } from "../hooks/useReadingProgress"
 import ReadingTimer from "./ReadingTimer"
+import MyBooksSummary from "./MyBooksSummary"
 import type { BadgeKind } from "../types"
 
 // how the badges are grouped on the page
 const badgeGroups: { title: string; kinds: BadgeKind[] }[] = [
   { title: "Reading Time", kinds: ["minutes", "longSession"] },
+  { title: "Books", kinds: ["booksFinished"] },
   { title: "Streaks & Habits", kinds: ["streak", "daysRead"] },
   { title: "Special", kinds: ["bedtime", "earlyBird", "weekend"] },
 ]
@@ -87,6 +89,9 @@ function ReadingProgressView() {
           </div>
         )}
       </div>
+
+      <h3 className="mt-8 mb-3 text-xl font-bold">My Books</h3>
+      <MyBooksSummary />
 
       <h3 className="mt-8 text-xl font-bold">My Badges</h3>
       <p className="mb-3 text-sm text-gray-600">

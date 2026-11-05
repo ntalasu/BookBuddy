@@ -5,8 +5,13 @@ import {
   saveBook,
   getSavedBooks,
   deleteBook,
-  type Book as ApiBook
+  updateBookStatus,
+  reviewBook,
+  type Book as ApiBook,
+  type ReadingStatus
 } from "../services/api"
+import BookReviewCard from "./BookReviewCard"
+import Stars from "./Stars"
 
 type Book = {
   id: string
@@ -18,6 +23,26 @@ type Book = {
   description: string
   pageCount: number | null
   publishedDate: string
+  // Only on saved bookshelf books
+  status?: ReadingStatus
+  startedAt?: string | null
+  finishedAt?: string | null
+  rating?: number | null
+  favoritePart?: string | null
+}
+
+// The three shelves on "My Bookshelf"
+const shelves: { status: ReadingStatus; title: string; empty: string }[] = [
+  { status: "want_to_read", title: "🌟 Want to Read", empty: "Save a book below to add it here!" },
+  { status: "reading", title: "📖 Reading Now", empty: "Pick a book from Want to Read and start reading!" },
+  { status: "finished", title: "✅ Finished", empty: "Books you finish will show up here." },
+]
+
+type ShelfArea = "discover" | "shelf"
+
+// e.g. "Nov 2"
+function formatDate(isoDate: string) {
+  return new Date(isoDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })
 }
 
 const recommendedTopics = [
@@ -68,12 +93,19 @@ function formatBook(book: ApiBook): Book {
     coverUrl: book.thumbnail || "",
     description: book.description || "",
     pageCount: book.pageCount ?? null,
-    publishedDate: book.publishedDate || ""
+    publishedDate: book.publishedDate || "",
+    status: book.status,
+    startedAt: book.startedAt,
+    finishedAt: book.finishedAt,
+    rating: book.rating,
+    favoritePart: book.favoritePart
   }
 }
 
 function BookDiscoveryView() {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
+  // which part of the page the selected book was tapped on, so its details show right there
+  const [selectedFrom, setSelectedFrom] = useState<ShelfArea>("discover")
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState("")
   const [books, setBooks] = useState<Book[]>([])
@@ -85,6 +117,9 @@ function BookDiscoveryView() {
   const [detailsError, setDetailsError] = useState("")
 
   const [, setShowingRecommendations] = useState(true)
+  // the saved book being rated in the "How did you like it?" pop-up
+  const [reviewingBook, setReviewingBook] = useState<Book | null>(null)
+  const [reviewJustFinished, setReviewJustFinished] = useState(false)
 
   async function loadRecommendations() {
     setLoading(true)
@@ -166,6 +201,44 @@ function BookDiscoveryView() {
     }
   }
 
+  // Move the selected saved book to another shelf
+  async function handleChangeStatus(status: ReadingStatus) {
+    if (!selectedBook) return
+
+    setSaveMessage("")
+
+    try {
+      const updated = formatBook(await updateBookStatus(selectedBook.id, status))
+
+      setSavedBooks((prev) =>
+        prev.map((book) => (book.id === updated.id ? updated : book))
+      )
+
+      if (status === "reading") setSaveMessage("Happy reading! 📖")
+      if (status === "finished") {
+        setSaveMessage("🎉 Great job finishing this book!")
+        setReviewingBook(updated)
+        setReviewJustFinished(true)
+      }
+    } catch (error) {
+      console.error("Error updating book status:", error)
+      setSaveMessage("Failed to update book.")
+    }
+  }
+
+  // Save the rating from the pop-up
+  async function handleSaveReview(rating: number, favoritePart: string) {
+    if (!reviewingBook) return
+
+    const updated = formatBook(await reviewBook(reviewingBook.id, rating, favoritePart))
+
+    setSavedBooks((prev) =>
+      prev.map((book) => (book.id === updated.id ? updated : book))
+    )
+    setReviewingBook(null)
+    setSaveMessage("⭐ Thanks for rating this book!")
+  }
+
   // Search for books using Google Books API
 async function handleSearch(searchQuery: string) {
   if (!searchQuery.trim()) {
@@ -198,13 +271,14 @@ useEffect(() => {
 }, [])
 
   // Retrieve full book details when clicked
-  async function handleSelectBook(book: Book) {
+  async function handleSelectBook(book: Book, from: ShelfArea) {
     // clicking the book that's already open closes it
-    if (selectedBook?.id === book.id) {
+    if (selectedBook?.id === book.id && selectedFrom === from) {
       setSelectedBook(null)
       return
     }
 
+    setSelectedFrom(from)
     setSelectedBook(book)
     setDetailsLoading(true)
     setDetailsError("")
@@ -221,44 +295,221 @@ useEffect(() => {
     }
   }
 
-  return (
-    <section className="p-6">
+  // The selected book's bookshelf entry (with its status), if it's saved
+  const savedEntry = selectedBook
+    ? savedBooks.find((book) => book.id === selectedBook.id)
+    : undefined
 
-      {/* My saved bookshelf */}
-      <h2 className="mb-4 text-2xl font-bold">
-        📚 My Bookshelf
-      </h2>
+  // One book spine. Used on every shelf.
+  function renderSpine(book: Book, from: ShelfArea) {
+    const isSelected = selectedBook?.id === book.id && selectedFrom === from
 
-      {savedBooks.length === 0 ? (
-        <p className="mb-8 text-gray-600">
-          No saved books yet. Discover a book and add it to your bookshelf!
-        </p>
+    return (
+      <button
+        key={book.id}
+        onClick={() => handleSelectBook(book, from)}
+        className={`${getSpineStyle(book.id)}
+          flex w-14 cursor-pointer justify-between overflow-hidden rounded-t-sm px-2 py-3 text-white shadow-lg
+          transition-transform [writing-mode:vertical-rl]
+          ${isSelected ? "-translate-y-6" : "hover:-translate-y-2"}`}
+      >
+        <span className="font-bold">
+          {book.title}
+        </span>
+
+        <span className="text-xs opacity-80">
+          {book.author}
+        </span>
+      </button>
+    )
+  }
+
+  // Book details card, shown under the shelf the book was tapped on
+  const detailsCard = selectedBook && (
+    <div className="mt-8 flex max-w-xl gap-6 rounded-xl bg-white p-6 shadow-lg">
+
+      {/* Book cover */}
+      {selectedBook.coverUrl ? (
+        <img
+          src={selectedBook.coverUrl}
+          alt={`Cover of ${selectedBook.title}`}
+          className="h-fit w-32 shrink-0 rounded shadow-md"
+        />
       ) : (
-        <div className="mt-10 mb-10 flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
-          {savedBooks.map((book) => {
-            const isSelected = selectedBook?.id === book.id
-
-            return (
-              <button
-                key={book.id}
-                onClick={() => handleSelectBook(book)}
-                className={`${getSpineStyle(book.id)}
-                  flex w-14 cursor-pointer justify-between overflow-hidden rounded-t-sm px-2 py-3 text-white shadow-lg
-                  transition-transform [writing-mode:vertical-rl]
-                  ${isSelected ? "-translate-y-6" : "hover:-translate-y-2"}`}
-              >
-                <span className="font-bold">
-                  {book.title}
-                </span>
-
-                <span className="text-xs opacity-80">
-                  {book.author}
-                </span>
-              </button>
-            )
-          })}
+        <div className="flex w-32 shrink-0 items-center justify-center rounded bg-gray-200 p-3 text-center text-sm text-gray-500">
+          No cover available
         </div>
       )}
+
+      {/* Book information */}
+      <div className="min-w-0 flex-1">
+
+        <h3 className="text-2xl font-bold">
+          {selectedBook.title}
+        </h3>
+
+        <p className="text-gray-600">
+          by {selectedBook.author}
+        </p>
+
+        {detailsLoading && (
+          <p className="mt-3 text-sm text-gray-500">
+            Loading details...
+          </p>
+        )}
+
+        {detailsError && (
+          <p className="mt-3 text-sm text-red-600">
+            {detailsError}
+          </p>
+        )}
+
+        {!detailsLoading && (
+          <>
+            {/* Description */}
+            {selectedBook.description && (
+              <p className="mt-4 text-sm text-gray-700">
+                {selectedBook.description}
+              </p>
+            )}
+
+            {/* Page count */}
+            {selectedBook.pageCount != null && (
+              <p className="mt-3 text-sm">
+                <strong>Pages:</strong> {selectedBook.pageCount}
+              </p>
+            )}
+
+            {/* Published date */}
+            {selectedBook.publishedDate && (
+              <p className="mt-2 text-sm">
+                <strong>Published:</strong> {selectedBook.publishedDate}
+              </p>
+            )}
+
+            {/* Genres */}
+            {selectedBook.genres.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedBook.genres.map((genre) => (
+                  <span
+                    key={genre}
+                    className="rounded-full bg-amber-100 px-3 py-1 text-sm"
+                  >
+                    {genre}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Reading status: what's next for this saved book */}
+        {savedEntry?.status === "finished" && savedEntry.finishedAt && (
+          <p className="mt-5 rounded-lg bg-green-50 p-3 text-sm text-green-800">
+            ✅ {savedEntry.startedAt
+              ? `You started this on ${formatDate(savedEntry.startedAt)} and finished on ${formatDate(savedEntry.finishedAt)}!`
+              : `You finished this on ${formatDate(savedEntry.finishedAt)}!`}
+          </p>
+        )}
+
+        {/* Rating: shown once a book is finished (and kept while rereading) */}
+        {savedEntry && (savedEntry.status === "finished" || savedEntry.rating) && (
+          <div className="mt-3 rounded-lg bg-yellow-50 p-3 text-sm">
+            {savedEntry.rating ? (
+              <>
+                <p className="flex items-center gap-2">
+                  <strong>Your rating:</strong> <Stars rating={savedEntry.rating} size="text-xl" />
+                </p>
+                {savedEntry.favoritePart && (
+                  <p className="mt-1 text-gray-700">
+                    <strong>Favorite part:</strong> “{savedEntry.favoritePart}”
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-gray-600">You haven't rated this book yet.</p>
+            )}
+
+            <button
+              onClick={() => {
+                setReviewingBook(savedEntry)
+                setReviewJustFinished(false)
+              }}
+              className="mt-2 font-semibold text-orange-600 underline hover:text-orange-700"
+            >
+              {savedEntry.rating ? "Change rating" : "⭐ Rate this book"}
+            </button>
+          </div>
+        )}
+
+        {savedEntry?.status === "reading" && savedEntry.startedAt && (
+          <p className="mt-5 text-sm text-gray-600">
+            📖 You started reading this on {formatDate(savedEntry.startedAt)}.
+          </p>
+        )}
+
+        <div className="mt-5 flex flex-wrap gap-3">
+          {/* Save to Bookshelf button */}
+          {!savedEntry && (
+            <button
+              onClick={handleSaveBook}
+              disabled={saving || detailsLoading}
+              className="rounded-lg bg-orange-500 px-5 py-2 font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "📚 Save to Bookshelf"}
+            </button>
+          )}
+
+          {savedEntry && (savedEntry.status ?? "want_to_read") === "want_to_read" && (
+            <button
+              onClick={() => handleChangeStatus("reading")}
+              className="rounded-lg bg-sky-500 px-5 py-2 font-semibold text-white hover:bg-sky-600"
+            >
+              📖 I started reading this!
+            </button>
+          )}
+
+          {savedEntry?.status === "reading" && (
+            <button
+              onClick={() => handleChangeStatus("finished")}
+              className="rounded-lg bg-green-500 px-5 py-2 font-semibold text-white hover:bg-green-600"
+            >
+              ✅ I finished it!
+            </button>
+          )}
+
+          {savedEntry?.status === "finished" && (
+            <button
+              onClick={() => handleChangeStatus("reading")}
+              className="rounded-lg bg-sky-100 px-5 py-2 font-semibold text-sky-800 hover:bg-sky-200"
+            >
+              🔁 Read it again
+            </button>
+          )}
+
+          {savedEntry && (
+            <button
+              onClick={handleDeleteBook}
+              className="rounded-lg bg-red-500 px-5 py-2 font-semibold text-white hover:bg-red-600"
+            >
+              🗑️ Remove from Bookshelf
+            </button>
+          )}
+        </div>
+
+        {/* Save confirmation message */}
+        {saveMessage && (
+          <p className="mt-2 text-sm text-gray-700">
+            {saveMessage}
+          </p>
+        )}
+
+      </div>
+    </div>
+  )
+
+  return (
+    <section className="p-6">
 
       {/* Discover books */}
       <h2 className="mb-4 text-2xl font-bold">
@@ -315,136 +566,60 @@ useEffect(() => {
 
       {/* Bookshelf - Nina's original design */}
       <div className="flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
-        {books.map((book) => {
-          const isSelected = selectedBook?.id === book.id
-
-          return (
-            <button
-              key={book.id}
-              onClick={() => handleSelectBook(book)}
-              className={`${getSpineStyle(book.id)}
-                flex w-14 cursor-pointer justify-between overflow-hidden rounded-t-sm px-2 py-3 text-white shadow-lg
-                transition-transform [writing-mode:vertical-rl]
-                ${isSelected ? "-translate-y-6" : "hover:-translate-y-2"}`}
-            >
-              <span className="font-bold">
-                {book.title}
-              </span>
-
-              <span className="text-xs opacity-80">
-                {book.author}
-              </span>
-            </button>
-          )
-        })}
+        {books.map((book) => renderSpine(book, "discover"))}
       </div>
 
-      {/* Book details card */}
-      {selectedBook && (
-        <div className="mt-8 flex max-w-xl gap-6 rounded-xl bg-white p-6 shadow-lg">
+      {selectedFrom === "discover" && detailsCard}
 
-          {/* Book cover */}
-          {selectedBook.coverUrl ? (
-            <img
-              src={selectedBook.coverUrl}
-              alt={`Cover of ${selectedBook.title}`}
-              className="h-fit w-32 shrink-0 rounded shadow-md"
-            />
-          ) : (
-            <div className="flex w-32 shrink-0 items-center justify-center rounded bg-gray-200 p-3 text-center text-sm text-gray-500">
-              No cover available
-            </div>
-          )}
+      {/* My saved bookshelf */}
+      <h2 className="mt-12 mb-4 text-2xl font-bold">
+        📚 My Bookshelf
+      </h2>
 
-          {/* Book information */}
-          <div className="min-w-0 flex-1">
+      {savedBooks.length === 0 ? (
+        <p className="mb-8 text-gray-600">
+          No saved books yet. Discover a book and add it to your bookshelf!
+        </p>
+      ) : (
+        <div className="mb-10 space-y-8">
+          {shelves.map((shelf) => {
+            const shelfBooks = savedBooks.filter(
+              (book) => (book.status ?? "want_to_read") === shelf.status
+            )
 
-            <h3 className="text-2xl font-bold">
-              {selectedBook.title}
-            </h3>
+            return (
+              <div key={shelf.status}>
+                <h3 className="mb-2 text-lg font-semibold">
+                  {shelf.title} ({shelfBooks.length})
+                </h3>
 
-            <p className="text-gray-600">
-              by {selectedBook.author}
-            </p>
-
-            {detailsLoading && (
-              <p className="mt-3 text-sm text-gray-500">
-                Loading details...
-              </p>
-            )}
-
-            {detailsError && (
-              <p className="mt-3 text-sm text-red-600">
-                {detailsError}
-              </p>
-            )}
-
-            {!detailsLoading && (
-              <>
-                {/* Description */}
-                {selectedBook.description && (
-                  <p className="mt-4 text-sm text-gray-700">
-                    {selectedBook.description}
+                {shelfBooks.length === 0 ? (
+                  <p className="border-b-[16px] border-amber-900 px-4 pb-3 text-sm text-gray-500">
+                    {shelf.empty}
                   </p>
-                )}
-
-                {/* Page count */}
-                {selectedBook.pageCount != null && (
-                  <p className="mt-3 text-sm">
-                    <strong>Pages:</strong> {selectedBook.pageCount}
-                  </p>
-                )}
-
-                {/* Published date */}
-                {selectedBook.publishedDate && (
-                  <p className="mt-2 text-sm">
-                    <strong>Published:</strong> {selectedBook.publishedDate}
-                  </p>
-                )}
-
-                {/* Genres */}
-                {selectedBook.genres.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {selectedBook.genres.map((genre) => (
-                      <span
-                        key={genre}
-                        className="rounded-full bg-amber-100 px-3 py-1 text-sm"
-                      >
-                        {genre}
-                      </span>
-                    ))}
+                ) : (
+                  <div className="mt-8 flex items-end gap-1 border-b-[16px] border-amber-900 px-4">
+                    {shelfBooks.map((book) => renderSpine(book, "shelf"))}
                   </div>
                 )}
-              </>
-            )}
-
-            {/* Save to Bookshelf button */}
-            <button
-              onClick={handleSaveBook}
-              disabled={saving || detailsLoading}
-              className="mt-5 rounded-lg bg-orange-500 px-5 py-2 font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "📚 Save to Bookshelf"}
-            </button>
-
-            {savedBooks.some((book) => book.id === selectedBook.id) && (
-              <button
-                onClick={handleDeleteBook}
-                className="mt-3 rounded-lg bg-red-500 px-5 py-2 font-semibold text-white hover:bg-red-600"
-              >
-                🗑️ Remove from Bookshelf
-              </button>
-            )}
-
-            {/* Save confirmation message */}
-            {saveMessage && (
-              <p className="mt-2 text-sm text-gray-700">
-                {saveMessage}
-              </p>
-            )}
-
-          </div>
+              </div>
+            )
+          })}
         </div>
+      )}
+
+      {selectedFrom === "shelf" && detailsCard}
+
+      {/* "How did you like it?" pop-up */}
+      {reviewingBook && (
+        <BookReviewCard
+          bookTitle={reviewingBook.title}
+          justFinished={reviewJustFinished}
+          initialRating={reviewingBook.rating}
+          initialFavoritePart={reviewingBook.favoritePart}
+          onSave={handleSaveReview}
+          onSkip={() => setReviewingBook(null)}
+        />
       )}
     </section>
   )

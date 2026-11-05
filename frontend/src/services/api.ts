@@ -9,7 +9,16 @@ export interface Book {
   pageCount: number | null;
   publishedDate?: string;
   categories?: string[];
+  // Only on saved bookshelf books
+  status?: ReadingStatus;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  timesFinished?: number;
+  rating?: number | null; // 1-5 stars, once a finished book is rated
+  favoritePart?: string | null;
 }
+
+export type ReadingStatus = "want_to_read" | "reading" | "finished";
 
 // Search books using Google Books API
 export async function searchBooks(query: string): Promise<Book[]> {
@@ -79,4 +88,46 @@ export async function deleteBook(bookId: string): Promise<void> {
   if (!response.ok) {
     throw new Error("Failed to delete book");
   }
+}
+
+// Move a saved book to "want to read", "reading", or "finished"
+export async function updateBookStatus(bookId: string, status: ReadingStatus): Promise<Book> {
+  const response = await fetch(
+    `${API_URL}/bookshelf/${encodeURIComponent(bookId)}/status`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to update book status");
+  }
+
+  return response.json();
+}
+
+// Rate a finished book (1-5 stars) and optionally share a favorite part
+export async function reviewBook(bookId: string, rating: number, favoritePart: string): Promise<Book> {
+  const response = await fetch(
+    `${API_URL}/bookshelf/${encodeURIComponent(bookId)}/review`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ rating, favoritePart }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to save rating");
+  }
+
+  return response.json();
 }
