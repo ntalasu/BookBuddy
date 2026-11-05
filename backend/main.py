@@ -12,7 +12,8 @@ from database import (
     create_auth_session, get_auth_session, delete_auth_session,
     get_workos_session_id,
     add_reading_log, get_reading_logs,
-    update_book_status, count_finished_books
+    update_book_status, count_finished_books,
+    save_book_review
 )
 import requests
 import uuid
@@ -339,6 +340,43 @@ def change_book_status(
         raise HTTPException(
             status_code=404,
             detail="Book not found in bookshelf."
+        )
+
+    book = next(
+        (b for b in get_saved_books(student["id"]) if b["id"] == book_id),
+        None
+    )
+
+    return book
+
+class BookReview(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    favoritePart: str = Field(default="", max_length=200)
+
+
+# Rate a finished book and share a favorite part
+@app.post("/bookshelf/{book_id}/review")
+def review_book(
+        book_id: str,
+        review: BookReview,
+        workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student profile not found."
+        )
+
+    favorite_part = review.favoritePart.strip() or None
+
+    saved = save_book_review(book_id, student["id"], review.rating, favorite_part)
+
+    if not saved:
+        raise HTTPException(
+            status_code=404,
+            detail="Finish this book before rating it."
         )
 
     book = next(
