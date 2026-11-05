@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router"
 import { getSavedBooks, type Book } from "../services/api"
+import Stars from "./Stars"
 
 // e.g. "Nov 2"
 function formatDate(isoDate: string) {
@@ -17,7 +18,15 @@ function BookRow({ book, note }: { book: Book; note: string }) {
       )}
       <div className="min-w-0">
         <p className="truncate font-semibold">{book.title}</p>
-        <p className="text-sm text-gray-500">{note}</p>
+        <p className="text-sm text-gray-500">
+          {note}
+          {book.rating ? (
+            <>
+              {" · "}
+              <Stars rating={book.rating} />
+            </>
+          ) : null}
+        </p>
       </div>
     </li>
   )

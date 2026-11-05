@@ -118,6 +118,22 @@ def init_db():
         )
     """)
 
+    # Star rating and favorite part a student gives a finished book
+    columns = [
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(finished_books)").fetchall()
+    ]
+
+    if "rating" not in columns:
+        connection.execute(
+            "ALTER TABLE finished_books ADD COLUMN rating INTEGER"
+        )
+
+    if "favorite_part" not in columns:
+        connection.execute(
+            "ALTER TABLE finished_books ADD COLUMN favorite_part TEXT"
+        )
+
     # Books finished before this table existed
     connection.execute("""
         INSERT OR IGNORE INTO finished_books (student_id, book_id, first_finished_at)
@@ -213,10 +229,15 @@ def get_saved_books(student_id):
             student_bookshelf.status,
             student_bookshelf.started_at,
             student_bookshelf.finished_at,
-            student_bookshelf.times_finished
+            student_bookshelf.times_finished,
+            finished_books.rating,
+            finished_books.favorite_part
         FROM bookshelf
         JOIN student_bookshelf
             ON bookshelf.id = student_bookshelf.book_id
+        LEFT JOIN finished_books
+            ON finished_books.book_id = student_bookshelf.book_id
+            AND finished_books.student_id = student_bookshelf.student_id
         WHERE student_bookshelf.student_id = ?
     """, (student_id,)).fetchall()
 
@@ -237,7 +258,9 @@ def get_saved_books(student_id):
             "status": row["status"],
             "startedAt": row["started_at"],
             "finishedAt": row["finished_at"],
-            "timesFinished": row["times_finished"]
+            "timesFinished": row["times_finished"],
+            "rating": row["rating"],
+            "favoritePart": row["favorite_part"]
         })
 
     return books
@@ -407,6 +430,26 @@ def update_student(student_id, changes):
         connection.close()
 
     return get_student(student_id)
+
+
+# Save a star rating (1-5) and optional favorite part for a finished book.
+# Returns False if the student hasn't finished this book.
+def save_book_review(book_id, student_id, rating, favorite_part):
+    connection = get_connection()
+
+    cursor = connection.execute("""
+        UPDATE finished_books
+        SET rating = ?, favorite_part = ?
+        WHERE book_id = ? AND student_id = ?
+    """, (rating, favorite_part, book_id, student_id))
+
+    connection.commit()
+
+    updated = cursor.rowcount > 0
+
+    connection.close()
+
+    return updated
 
 
 # How many different books a student has ever finished
