@@ -1,7 +1,9 @@
 import { useState } from "react"
 import { useLoggedInStudent } from "../context/StudentContext"
+import { useBuddyLoader } from "../hooks/useBuddyLoader"
 import { useChat } from "../hooks/useChat"
 import BuddyAvatar from "./BuddyAvatar"
+import BuddyWakingUp from "./BuddyWakingUp"
 import ChatInput from "./ChatInput"
 import VocabularyCard from "./VocabularyCard"
 
@@ -11,6 +13,7 @@ function cleanWord(word: string) {
 
 function ChatView() {
   const { student } = useLoggedInStudent()
+  const buddy = useBuddyLoader() // starts waking Buddy up as soon as the chat opens
   const { messages, typing, error, sendMessage, defineWord } = useChat(
     student,
     `Hi ${student.name}!${student.buddyName ? ` And hi to ${student.buddyName} too!` : ""} I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!`,
@@ -32,8 +35,13 @@ function ChatView() {
       <h2 className="mb-4 text-2xl font-bold">Chat with BookBuddy</h2>
 
       <div className="flex h-[32rem] max-w-2xl flex-col rounded-xl bg-white shadow-lg">
+        {/* "Buddy is waking up…" until the AI is ready */}
+        {buddy.status !== "ready" && (
+          <BuddyWakingUp student={student} status={buddy.status} progress={buddy.progress} firstTime={buddy.firstTime} />
+        )}
+
         {/* messages */}
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        <div className={`flex-1 space-y-3 overflow-y-auto p-4 ${buddy.status === "ready" ? "" : "hidden"}`}>
           {messages.map((message, index) => (
             <div
               key={index}
@@ -89,7 +97,7 @@ function ChatView() {
           />
         )}
 
-        <ChatInput onSend={sendMessage} disabled={typing} />
+        <ChatInput onSend={sendMessage} disabled={typing || buddy.status !== "ready"} />
       </div>
     </section>
   )
