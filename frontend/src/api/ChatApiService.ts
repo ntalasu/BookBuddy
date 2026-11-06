@@ -1,49 +1,40 @@
+import { findBooksAbout, findMentionedBook, pickTopic } from "../ai/bookFinder"
+import { favoriteTitlesForAge } from "../ai/bookList"
+import { askBuddy, defineWithBuddy, pickVocabularyWords } from "../ai/buddyEngine"
+import type { Student } from "../context/StudentContext"
+import { getSavedBooks } from "../services/api"
 import type { ChatMessage, ChatResponse, DefinitionResponse } from "../types"
-import { ApiClient, fakeDelay, USE_MOCK } from "./ApiClient"
 
-const fakeReplies = [
-  "Ooh, great question! A good adventure story always has a brave character who faces a challenge.",
-  "I think you'd enjoy a mysterious book. Want me to suggest one?",
-  "That's so interesting! Being curious is what makes a great reader.",
-  "Books are amazing because they let your imagination go anywhere!",
-]
-
-const fakeDefinitions: Record<string, string> = {
-  adventure: "An exciting trip or experience, often with some danger.",
-  character: "A person or animal in a story.",
-  challenge: "Something hard that takes effort to do.",
-  mysterious: "Strange and hard to explain or understand.",
-  curious: "Wanting to learn or know more about something.",
-  imagination: "The part of your mind that makes up pictures and ideas.",
-}
-
-function cleanWord(word: string) {
-  return word.toLowerCase().replace(/[^a-z]/g, "")
-}
-
+// Buddy's chat runs on the AI in the browser (see src/ai), not the backend,
+// so it's free, has no message limit, and messages never leave the kid's device.
 export const ChatApiService = {
-  async sendMessage(studentId: string, message: string, bookId?: string): Promise<ChatResponse> {
-    if (USE_MOCK) {
-      await fakeDelay(1000)
-      const reply = fakeReplies[Math.floor(Math.random() * fakeReplies.length)]
-      const vocabularyWords = reply.split(" ").map(cleanWord).filter((w) => w in fakeDefinitions)
-      return { reply, vocabularyWords }
-    }
-    return ApiClient.post("/chat", { studentId, message, bookId })
+  // history = the whole chat so far, ending with the kid's new message.
+  // onText is called with Buddy's reply so far, so it can appear word by word.
+  async sendMessage(student: Student, history: ChatMessage[], onText: (textSoFar: string) => void): Promise<ChatResponse> {
+    // Buddy gets the kid's bookshelf, Google Books results for the topic they're talking about,
+    // and a lookup of any book they name. Only a topic word or a short book title is ever
+    // searched (never numbers or emails); the kid's messages themselves stay on the device.
+    const kidMessages = history.filter((message) => message.from === "student").map((message) => message.text)
+    const topic = pickTopic(kidMessages, student.interests)
+    const [shelf, foundBooks] = await Promise.all([
+      getSavedBooks().catch(() => []),
+      topic ? findBooksAbout(topic).catch(() => []) : [],
+    ])
+    const mentioned = await findMentionedBook(
+      kidMessages,
+      [...shelf, ...foundBooks],
+      favoriteTitlesForAge(student.age),
+    ).catch(() => null)
+    const reply = await askBuddy(student, { shelf, topic, foundBooks, mentioned }, history, onText)
+    return { reply, vocabularyWords: pickVocabularyWords(reply) }
   },
 
-  async getConversation(studentId: string): Promise<ChatMessage[]> {
-    if (USE_MOCK) {
-      return []
-    }
-    return ApiClient.get(`/students/${studentId}/conversation`)
+  // Chats aren't saved anywhere yet, so every visit starts fresh
+  async getConversation(): Promise<ChatMessage[]> {
+    return []
   },
 
-  async defineWord(studentId: string, word: string, context: string): Promise<DefinitionResponse> {
-    if (USE_MOCK) {
-      await fakeDelay(300)
-      return { word, definition: fakeDefinitions[word] ?? "I don't know that word yet!" }
-    }
-    return ApiClient.post("/vocabulary/define", { studentId, word, context })
+  async defineWord(student: Student, word: string, context: string): Promise<DefinitionResponse> {
+    return { word, definition: await defineWithBuddy(student, word, context) }
   },
 }

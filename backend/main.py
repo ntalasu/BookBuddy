@@ -226,9 +226,9 @@ def auth_logout(request: Request):
 
 # Search books using Google Books API
 @app.get("/books/search")
-def get_books(query: str):
+def get_books(query: str, language: str | None = None):
     try:
-        return search_books(query)
+        return search_books(query, language)
 
     except requests.RequestException as e:
         print("Google Books API error:", repr(e))

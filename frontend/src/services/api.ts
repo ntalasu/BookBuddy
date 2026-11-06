@@ -21,9 +21,10 @@ export interface Book {
 export type ReadingStatus = "want_to_read" | "reading" | "finished";
 
 // Search books using Google Books API
-export async function searchBooks(query: string): Promise<Book[]> {
+export async function searchBooks(query: string, language?: string): Promise<Book[]> {
+  const languageParam = language ? `&language=${encodeURIComponent(language)}` : "";
   const response = await fetch(
-    `${API_URL}/books/search?query=${encodeURIComponent(query)}`
+    `${API_URL}/books/search?query=${encodeURIComponent(query)}${languageParam}`
   );
 
   if (!response.ok) {

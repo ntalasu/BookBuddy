@@ -12,7 +12,7 @@ function cleanWord(word: string) {
 function ChatView() {
   const { student } = useLoggedInStudent()
   const { messages, typing, error, sendMessage, defineWord } = useChat(
-    student.id,
+    student,
     `Hi ${student.name}!${student.buddyName ? ` And hi to ${student.buddyName} too!` : ""} I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!`,
   )
   const [selectedWord, setSelectedWord] = useState<string | null>(null)
@@ -58,13 +58,15 @@ function ChatView() {
               >
                 {message.text.split(" ").map((word, i) =>
                   message.vocabularyWords?.includes(cleanWord(word)) ? (
-                    <button
-                      key={i}
-                      onClick={() => showDefinition(cleanWord(word), message.text)}
-                      className="cursor-pointer font-semibold text-sky-700 underline decoration-dotted"
-                    >
-                      {word}{" "}
-                    </button>
+                    // the space goes outside the button, or the browser drops it
+                    <span key={i}>
+                      <button
+                        onClick={() => showDefinition(cleanWord(word), message.text)}
+                        className="cursor-pointer font-semibold text-sky-700 underline decoration-dotted"
+                      >
+                        {word}
+                      </button>{" "}
+                    </span>
                   ) : (
                     <span key={i}>{word} </span>
                   ),
@@ -72,7 +74,10 @@ function ChatView() {
               </div>
             </div>
           ))}
-          {typing && <p className="text-sm text-gray-400">BookBuddy is typing…</p>}
+          {/* until Buddy's first words show up */}
+          {typing && messages[messages.length - 1]?.from === "student" && (
+            <p className="text-sm text-gray-400">BookBuddy is thinking…</p>
+          )}
           {error && <p className="text-sm text-red-600">Oops, something went wrong: {error}</p>}
         </div>
 
