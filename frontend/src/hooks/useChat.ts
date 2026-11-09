@@ -27,7 +27,15 @@ export function useChat(student: Student, greeting: string) {
       const response = await ChatApiService.sendMessage(student, history, (textSoFar) => {
         if (textSoFar.trim()) setMessages([...history, { from: "buddy", text: textSoFar }])
       })
-      setMessages([...history, { from: "buddy", text: response.reply, vocabularyWords: response.vocabularyWords }])
+      setMessages([
+        ...history,
+        {
+          from: "buddy",
+          text: response.reply,
+          vocabularyWords: response.vocabularyWords,
+          recommendedBooks: response.recommendedBooks,
+        },
+      ])
     } catch (e) {
       setMessages(history)
       setError((e as Error).message)

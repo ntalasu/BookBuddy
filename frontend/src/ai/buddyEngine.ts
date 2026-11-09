@@ -71,33 +71,41 @@ export async function askBuddy(
     frequency_penalty: 0.5, // fewer repeated words within a reply
     presence_penalty: 0.3,
     max_tokens: 150, // keeps replies short
+    stop: [`\n${student.name}:`, `${student.name}:`, "\nBookBuddy:"], // stop if Buddy starts writing the kid's side
   })
 
   let reply = ""
   for await (const chunk of stream) {
     reply += chunk.choices[0]?.delta.content ?? ""
-    onText(reply)
+    onText(withoutLabel(reply))
   }
-  return reply.trim()
+  return withoutLabel(reply).trim()
 }
 
-// Ask Buddy what a word means, in the sentence it came from
-export async function defineWithBuddy(student: Student, word: string, sentence: string) {
+// Small models sometimes start with "BookBuddy:" like a script. Kids shouldn't see that.
+function withoutLabel(reply: string) {
+  return reply.replace(/^\s*(?:BookBuddy|Buddy)\s*:\s*/i, "")
+}
+
+// Ask Buddy to explain a word for a kid, using the real dictionary meanings (so it can't make one up)
+export async function defineWithBuddy(student: Student, word: string, sentence: string, meanings: string[]) {
   const engine = await loadBuddy()
 
   const response = await engine.chat.completions.create({
     messages: [
       {
         role: "system",
-        content: `You explain words to a ${student.age}-year-old kid. Answer in one short sentence of no more than 12 words. Only use easy words a first grader knows. Do not use the word itself in the explanation.`,
+        content: `You explain words to a ${student.age}-year-old kid. Here is what the dictionary says "${word}" means:
+${meanings.map((meaning, i) => `${i + 1}. ${meaning}`).join("\n")}
+Pick the meaning that fits the sentence. Explain it in one short sentence of no more than 12 words, using easy words a first grader knows. Only use the dictionary meaning. Do not add anything else. Do not use the word "${word}" itself.`,
       },
       { role: "user", content: `What does "${word}" mean in this sentence: "${sentence}"` },
     ],
-    temperature: 0.3,
+    temperature: 0.2,
     max_tokens: 60,
   })
 
-  return response.choices[0]?.message.content?.trim() || "I'm not sure what that word means!"
+  return response.choices[0]?.message.content?.trim() ?? ""
 }
 
 // Long, everyday words that aren't worth underlining

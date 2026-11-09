@@ -1,6 +1,8 @@
 // The shapes of data the frontend and backend send to each other.
 // These must match the backend's Pydantic schemas.
 
+import type { Book as GoogleBook } from "./services/api"
+
 export type Book = {
   id: string
   title: string
@@ -57,11 +59,13 @@ export type ChatMessage = {
   from: "student" | "buddy"
   text: string
   vocabularyWords?: string[] // words in a buddy message the student can tap for a definition
+  recommendedBooks?: GoogleBook[] // books Buddy named, which the kid can add to their bookshelf
 }
 
 export type ChatResponse = {
   reply: string
   vocabularyWords: string[]
+  recommendedBooks: GoogleBook[]
 }
 
 export type DefinitionResponse = {

@@ -1,23 +1,56 @@
 import { useState } from "react"
-import { useLoggedInStudent } from "../context/StudentContext"
+import { useLoggedInStudent, type Student } from "../context/StudentContext"
+import { followUpOptions, pickSearch } from "../ai/bookFinder"
+import { groupInterests } from "../data/interests"
 import { useBuddyLoader } from "../hooks/useBuddyLoader"
 import { useChat } from "../hooks/useChat"
 import BuddyAvatar from "./BuddyAvatar"
 import BuddyWakingUp from "./BuddyWakingUp"
 import ChatInput from "./ChatInput"
+import RecommendedBookCard from "./RecommendedBookCard"
 import VocabularyCard from "./VocabularyCard"
 
 function cleanWord(word: string) {
   return word.toLowerCase().replace(/[^a-z]/g, "")
 }
 
+// Up to 4 of the kid's profile picks, mixing the three groups (a kind of book, a thing, fun stuff)
+function pickStarters(interests: string[]) {
+  const { kinds, things, fun } = groupInterests(interests)
+  const mixed: string[] = []
+  for (let i = 0; mixed.length < 4 && i < Math.max(kinds.length, things.length, fun.length); i++) {
+    for (const group of [kinds, things, fun]) {
+      if (group[i] && mixed.length < 4) mixed.push(group[i])
+    }
+  }
+  return mixed
+}
+
+// "Magic", "Magic and Space", "Magic, Space and Camping"
+function listWords(words: string[]) {
+  return words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`
+}
+
+// Buddy's first message, using what the kid picked on their profile
+function greeting(student: Student, starters: string[]) {
+  const hello = `Hi ${student.name}!${student.buddyName ? ` And hi to ${student.buddyName} too!` : ""} I'm BookBuddy. 📚`
+  return starters.length > 0
+    ? `${hello} I see you like ${listWords(starters.slice(0, 3))}. What do you want to read about today? Tap one, or type your own!`
+    : `${hello} What do you like to read about? You can also pick your favorites on your Profile page!`
+}
+
 function ChatView() {
   const { student } = useLoggedInStudent()
   const buddy = useBuddyLoader() // starts waking Buddy up as soon as the chat opens
-  const { messages, typing, error, sendMessage, defineWord } = useChat(
-    student,
-    `Hi ${student.name}!${student.buddyName ? ` And hi to ${student.buddyName} too!` : ""} I'm BookBuddy. Ask me about any book, or tap an underlined word to learn what it means!`,
-  )
+  const starters = pickStarters(student.interests)
+  const { messages, typing, error, sendMessage, defineWord } = useChat(student, greeting(student, starters))
+  const hasChatted = messages.some((message) => message.from === "student")
+
+  // after Buddy recommends a book: buttons to find a better one, using the kid's profile picks
+  const lastMessage = messages[messages.length - 1]
+  const justRecommended = !typing && lastMessage?.from === "buddy" && (lastMessage.recommendedBooks?.length ?? 0) > 0
+  const kidMessages = messages.filter((message) => message.from === "student").map((message) => message.text)
+  const followUps = justRecommended ? followUpOptions(pickSearch(kidMessages, student.interests), student.interests) : []
   const [selectedWord, setSelectedWord] = useState<string | null>(null)
   const [definition, setDefinition] = useState<{ word: string; text: string } | null>(null)
 
@@ -79,6 +112,11 @@ function ChatView() {
                     <span key={i}>{word} </span>
                   ),
                 )}
+
+                {/* books Buddy recommended, with an "Add to my bookshelf" button */}
+                {message.recommendedBooks?.map((book) => (
+                  <RecommendedBookCard key={book.id} book={book} />
+                ))}
               </div>
             </div>
           ))}
@@ -95,6 +133,36 @@ function ChatView() {
             definition={definition?.word === selectedWord ? definition.text : null}
             onClose={() => setSelectedWord(null)}
           />
+        )}
+
+        {/* the kid's profile picks, as buttons to start the chat */}
+        {buddy.status === "ready" && !hasChatted && starters.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-4 pb-2">
+            {starters.map((pick) => (
+              <button
+                key={pick}
+                onClick={() => sendMessage(`I like ${pick.toLowerCase()}!`)}
+                disabled={typing}
+                className="rounded-full border-2 border-orange-300 bg-orange-50 px-4 py-1 font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+              >
+                {pick}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {followUps.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-4 pb-2">
+            {followUps.map((option) => (
+              <button
+                key={option.label}
+                onClick={() => sendMessage(option.message)}
+                className="rounded-full border-2 border-sky-300 bg-sky-50 px-4 py-1 font-semibold text-sky-700 hover:bg-sky-100"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         )}
 
         <ChatInput onSend={sendMessage} disabled={typing || buddy.status !== "ready"} />
