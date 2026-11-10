@@ -89,13 +89,17 @@ def is_child_friendly(info):
 
     return any(word in title or word in description for word in child_keywords)
 
-def search_books(query):
+def search_books(query, language=None):
     params = {
         "q": query,
         "maxResults": 40,
         "printType": "books",
         "key": os.getenv("GOOGLE_BOOKS_API_KEY")
     }
+
+    # Optional: only books in one language, e.g. "en" (used by Buddy's chat)
+    if language:
+        params["langRestrict"] = language
 
     response = requests.get(
         GOOGLE_BOOKS_URL,
@@ -123,7 +127,9 @@ def search_books(query):
             "thumbnail": info.get("imageLinks", {}).get("thumbnail"),
             "pageCount": info.get("pageCount"),
             "publishedDate": info.get("publishedDate", ""),
-            "categories": info.get("categories", [])
+            "categories": info.get("categories", []),
+            "ratingsCount": info.get("ratingsCount", 0),
+            "publisher": info.get("publisher", "")
         }
 
         books.append(book)

@@ -15,15 +15,17 @@ export interface Book {
   finishedAt?: string | null;
   timesFinished?: number;
   rating?: number | null; // 1-5 stars, once a finished book is rated
+  matchedTopics?: string[]; // from recommendations: which asked-for topics the book really matches
   favoritePart?: string | null;
 }
 
 export type ReadingStatus = "want_to_read" | "reading" | "finished";
 
 // Search books using Google Books API
-export async function searchBooks(query: string): Promise<Book[]> {
+export async function searchBooks(query: string, language?: string): Promise<Book[]> {
+  const languageParam = language ? `&language=${encodeURIComponent(language)}` : "";
   const response = await fetch(
-    `${API_URL}/books/search?query=${encodeURIComponent(query)}`
+    `${API_URL}/books/search?query=${encodeURIComponent(query)}${languageParam}`
   );
 
   if (!response.ok) {
@@ -127,6 +129,44 @@ export async function reviewBook(bookId: string, rating: number, favoritePart: s
 
   if (!response.ok) {
     throw new Error("Failed to save rating");
+  }
+
+  return response.json();
+}
+
+// Good kids' books for topics like ["ghost", "dinosaur"], ranked by how popular they are
+// and how well they match the kid's interests. exclude = titles to skip (already suggested or saved).
+export async function getRecommendations(
+  topics: string[],
+  interests: string[],
+  age: number,
+  exclude: string[],
+  readingLevel?: string,
+  interestTopics: string[] = [],
+  limit = 1
+): Promise<Book[]> {
+  const params = new URLSearchParams({ age: String(age), limit: String(limit) });
+  if (readingLevel) params.append("reading_level", readingLevel);
+  interestTopics.forEach((topic) => params.append("interest_topics", topic));
+  topics.forEach((topic) => params.append("topics", topic));
+  interests.forEach((interest) => params.append("interests", interest));
+  exclude.forEach((title) => params.append("exclude", title));
+
+  const response = await fetch(`${API_URL}/books/recommendations?${params}`);
+
+  if (!response.ok) {
+    throw new Error("Failed to get recommendations");
+  }
+
+  return response.json();
+}
+
+// Is this a well-known kids' book? For things kids type like "cat in the hat". Returns null if not.
+export async function getKnownBook(title: string): Promise<Book | null> {
+  const response = await fetch(`${API_URL}/books/known?title=${encodeURIComponent(title)}`);
+
+  if (!response.ok) {
+    return null;
   }
 
   return response.json();

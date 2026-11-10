@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Literal
 from services.google_books import search_books, get_book_details
 from services.badges import get_progress
+from services.recommendations import recommend_books, well_known_kids_book
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import (
     init_db, save_book, get_saved_books, delete_book,
@@ -226,9 +227,9 @@ def auth_logout(request: Request):
 
 # Search books using Google Books API
 @app.get("/books/search")
-def get_books(query: str):
+def get_books(query: str, language: str | None = None):
     try:
-        return search_books(query)
+        return search_books(query, language)
 
     except requests.RequestException as e:
         print("Google Books API error:", repr(e))
@@ -236,6 +237,45 @@ def get_books(query: str):
             status_code=502,
             detail="Unable to retrieve books right now."
         )
+
+
+# Good kids' books for topics like ?topics=ghost&topics=dinosaur,
+# ranked by popularity and how well they match the kid's interests
+@app.get("/books/recommendations")
+def get_recommendations(
+        topics: list[str] = Query(...),
+        interests: list[str] = Query(default=[]),
+        age: int = Query(default=8, ge=3, le=14),
+        exclude: list[str] = Query(default=[]),
+        limit: int = Query(default=3, ge=1, le=10),
+        reading_level: str | None = None,
+        interest_topics: list[str] = Query(default=[])
+):
+    # "Kindergarten" -> reads like a 5-year-old, "Grade 3" -> like an 8-year-old
+    reading_age = None
+    if reading_level:
+        level = reading_level.lower()
+        if level.startswith("kinder"):
+            reading_age = 5
+        elif level.startswith("grade") and level[-1].isdigit():
+            reading_age = int(level[-1]) + 5
+
+    try:
+        return recommend_books(topics, interests, age, exclude, limit, reading_age, interest_topics)
+
+    except requests.RequestException as e:
+        print("Book recommendation error:", repr(e))
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to find book recommendations right now."
+        )
+
+
+# Is this a well-known kids' book? (For things kids type, like "cat in the hat".)
+# Returns the book, or null if it isn't one.
+@app.get("/books/known")
+def get_known_book(title: str = Query(min_length=2, max_length=80)):
+    return well_known_kids_book(title)
 
 
 # Get details for a specific book
