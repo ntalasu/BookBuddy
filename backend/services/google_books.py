@@ -127,7 +127,9 @@ def search_books(query, language=None):
             "thumbnail": info.get("imageLinks", {}).get("thumbnail"),
             "pageCount": info.get("pageCount"),
             "publishedDate": info.get("publishedDate", ""),
-            "categories": info.get("categories", [])
+            "categories": info.get("categories", []),
+            "ratingsCount": info.get("ratingsCount", 0),
+            "publisher": info.get("publisher", "")
         }
 
         books.append(book)

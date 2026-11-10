@@ -78,9 +78,8 @@ export const ChatApiService = {
     const onShelf = cardBook && shelf.some((book) => book.id === cardBook.id || book.title === cardBook.title)
     const recommendedBooks = cardBook && !onShelf ? [cardBook] : []
 
-    // don't underline words from the book's title as vocabulary words
-    const titleWords = cardBook ? cardBook.title.toLowerCase() : ""
-    const vocabularyWords = pickVocabularyWords(reply).filter((word) => !titleWords.includes(word))
+    // words to underline for kids to tap and learn, sized for the kid's age
+    const vocabularyWords = pickVocabularyWords(reply, student.age)
 
     return { reply, vocabularyWords, recommendedBooks }
   },

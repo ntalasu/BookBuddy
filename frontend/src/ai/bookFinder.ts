@@ -56,8 +56,8 @@ const topics: Topic[] = [
   { search: "toy", words: ["toy", "toys"] },
   { search: "video game", words: ["video game", "video games", "gaming"] },
   { search: "build", words: ["building things", "building", "lego", "legos", "build"] },
-  { search: "art", words: ["art", "drawing", "painting"] },
-  { search: "music", words: ["music", "singing"] },
+  { search: "art", words: ["art", "artist", "draw", "drawing", "paint", "painting", "crayon", "museum"] },
+  { search: "music", words: ["music", "song", "sing", "singing", "band", "piano", "guitar", "drum"] },
   { search: "cooking", words: ["cooking", "baking", "treats & sweets", "sweets", "treats"] },
 ]
 
@@ -453,7 +453,8 @@ function trimmed(sentence: string) {
 function mentionsTopicWord(sentence: string, topic: string) {
   const words = topics.find((t) => t.search === topic)?.words ?? [topic]
   const lower = sentence.toLowerCase()
-  return [topic, ...words].some((word) => new RegExp(`\\b${word}`).test(lower))
+  // whole words (and plurals, and "musical" for music), so "art" doesn't match "Arthur"
+  return [topic, ...words].some((word) => new RegExp(`\\b${word}(s|es|al)?\\b`).test(lower))
 }
 
 // What happens in the book, in one or two story sentences: ones that show why it fits what the kid

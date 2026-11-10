@@ -116,16 +116,32 @@ const commonWords = new Set([
   "stories", "animals", "talking", "reading", "because", "another", "nothing", "someone",
   "children", "friends", "friendship", "characters", "character", "beautiful", "everybody",
   "tomorrow", "yesterday", "birthday", "suggest", "recommend", "absolutely", "definitely",
+  // everyday words kids already know (6 and 7 letters)
+  "friend", "people", "little", "family", "school", "mother", "father", "around", "always", "before",
+  "better", "called", "really", "should", "things", "thought", "inside", "enough", "finally", "playing",
+  "looking", "wanted", "started", "getting", "pretty", "almost", "become", "during", "across", "summer",
+  "winter", "flying", "jumping", "running", "walking", "happen", "happens", "happened", "garden",
+  "brother", "sister", "parents", "teacher", "friendly", "another", "outside", "nothing", "anyone",
+  "kitten", "puppies", "puppy", "rabbit", "monkey", "dragon", "dragons", "turtle", "spider", "rocket",
+  "planet", "pirate", "pirates", "castle", "flower", "flowers", "cookie", "cookies", "candy", "dinner",
+  "become", "itself", "myself", "should", "would", "could", "didn't", "doesn't", "there's", "reader",
+  "readers", "reading", "picture", "pictures", "pages", "series", "chapter", "finish", "finished",
 ])
 
+// The shortest word worth underlining for this age: younger kids are still learning shorter words
+function shortestLearningWord(age?: number) {
+  if (!age || age >= 10) return 8
+  return age <= 7 ? 6 : 7
+}
+
 // Pick up to 2 bigger words from Buddy's reply for kids to tap and learn
-export function pickVocabularyWords(reply: string) {
+export function pickVocabularyWords(reply: string, age?: number) {
   const words: string[] = []
   for (const raw of reply.split(/\s+/)) {
     const letters = raw.replace(/^[^A-Za-z]+/, "") // ignore quotes and brackets in front
     if (/^[A-Z]/.test(letters)) continue // skip names and book titles
     const word = letters.toLowerCase().replace(/[^a-z]/g, "")
-    if (word.length >= 8 && !commonWords.has(word) && !words.includes(word)) words.push(word)
+    if (word.length >= shortestLearningWord(age) && !commonWords.has(word) && !words.includes(word)) words.push(word)
     if (words.length === 2) break
   }
   return words

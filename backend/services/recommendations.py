@@ -69,34 +69,38 @@ SUBJECTS = {
 # Words that show a book is really about a topic (checked in its Google title and description).
 # Topics not listed here just use the topic word itself, like "dinosaur" or "dragon".
 TOPIC_WORDS = {
-    "adventure": ("adventure", "quest", "journey", "explore"),
-    "mystery": ("myster", "detective", "solve", "clue", "case"),
-    "funny": ("funny", "humor", "humour", "laugh", "silly", "hilarious", "joke", "giggle"),
-    "fantasy": ("magic", "fantasy", "dragon", "wizard", "quest", "kingdom"),
-    "magic": ("magic", "wizard", "witch", "spell", "enchant"),
-    "fairy": ("fairy", "fairies", "princess", "once upon"),
-    "ghost": ("ghost", "haunt", "spook", "spirit"),
+    # Whole words (plurals count too: "dragon" matches "dragons", but "art" doesn't match "Arthur").
+    # A * means any ending: "myster*" matches mystery, mysteries, mysterious.
+    "adventure": ("adventure", "quest", "journey", "explore*"),
+    "mystery": ("myster*", "detective", "solve*", "clue", "case"),
+    "funny": ("funny", "humor*", "humour*", "laugh*", "silly", "hilarious*", "joke", "giggle*"),
+    "fantasy": ("magic*", "fantasy", "dragon", "wizard", "quest", "kingdom"),
+    "magic": ("magic*", "wizard", "witch", "witches", "spell", "enchant*"),
+    "fairy": ("fairy", "fairies", "princess", "princesses", "once upon"),
+    "ghost": ("ghost", "haunt*", "spook*", "spirit"),
     "comic": ("comic", "graphic novel"),
-    "poems": ("poem", "poetry", "rhym", "verse"),
+    "poems": ("poem", "poetry", "rhym*", "verse"),
     "knight": ("knight", "castle"),
-    "pet": ("pet", "dog", "cat", "puppy", "kitten"),
+    "pet": ("pet", "dog", "cat", "puppy", "puppies", "kitten"),
     "animal": ("animal", "creature", "zoo", "farm", "forest"),
-    "bug": ("bug", "insect", "butterfl", "ant ", "bee", "spider"),
+    "bug": ("bug", "insect", "butterfl*", "ant", "bee", "spider"),
     "ocean": ("ocean", "sea", "fish", "whale", "shark"),
     "space": ("space", "planet", "astronaut", "rocket", "star", "moon"),
-    "science": ("scien", "experiment", "invent"),
-    "history": ("histor", "long ago", "ancient"),
-    "biography": ("life", "born", "biograph", "true story"),
+    "science": ("scien*", "experiment", "invent*"),
+    "history": ("histor*", "long ago", "ancient"),
+    "biography": ("life", "born", "biograph*", "true story"),
     "nature": ("nature", "forest", "tree", "garden", "wild"),
     "truck": ("truck", "car"),
     "train": ("train", "railroad"),
-    "friend": ("friend",),
-    "family": ("family", "brother", "sister", "mom", "dad", "grand"),
+    "friend": ("friend", "friendship"),
+    "family": ("family", "families", "brother", "sister", "mom", "dad", "grand*"),
     "school": ("school", "classroom", "teacher"),
     "holiday": ("holiday", "christmas", "halloween", "thanksgiving", "hanukkah"),
-    "video game": ("game",),
-    "build": ("build",),
-    "cooking": ("cook", "bak", "kitchen", "food", "recipe"),
+    "video game": ("game", "video game"),
+    "build": ("build", "builds", "building", "builder"),
+    "cooking": ("cook*", "bak*", "kitchen", "food", "recipe"),
+    "art": ("art", "artist", "paint*", "draw", "draws", "drawing", "drew", "museum", "crayon", "sculpt*"),
+    "music": ("music*", "song", "sing*", "band", "piano", "guitar", "drum", "concert"),
 }
 
 
@@ -111,7 +115,7 @@ def mentions(text, words):
 NOT_THE_STORY = re.compile(
     r"award|winner|medal|bestsell|best-sell|edition|new york times|#1|praise|acclaim|generation|classic|"
     r"author|readers|paperback|hardcover|repackag|illustrat|series|called|features|guardian|review|"
-    r"netflix|movie|adapt|spot art|cover art",
+    r"netflix|movie|adapt|spot art|cover art|art by|art from|artwork|concept art|making of|full-color|full color|pictures by",
     re.IGNORECASE,
 )
 
@@ -122,9 +126,17 @@ def story_text(book):
     return " ".join(s for s in sentences if not NOT_THE_STORY.search(s)).lower()
 
 
+def word_pattern(word):
+    """ "dragon" -> whole word or plural ("dragons"), but not "dragonfly".
+    "myster*" -> any word starting with "myster" (mystery, mysterious)."""
+    if word.endswith("*"):
+        return r"\b" + re.escape(word[:-1])
+    return r"\b" + re.escape(word) + r"(?:s|es)?\b"
+
+
 def count_mentions(text, words):
-    """How many times any of these words show up (from the start of a word)."""
-    return sum(len(re.findall(r"\b" + re.escape(word), text)) for word in words)
+    """How many times any of these words show up."""
+    return sum(len(re.findall(word_pattern(word), text)) for word in words)
 
 
 def topic_score(book, topic):
@@ -151,7 +163,7 @@ NOT_FOR_KIDS = (
 
 # Words in a story that mean it's too violent for younger kids (8 and under)
 VIOLENT_STORY = re.compile(
-    r"\b(brutal\w*|savage\w*|murder\w*|blood\w*|slaughter\w*|kill\w*|vicious\w*|tortur\w*|wars?|warfare)\b"
+    r"\b(brutal\w*|savage\w*|murder\w*|blood\w*|slaughter\w*|kill\w*|vicious\w*|tortur\w*|wars?|warfare|died|dies|death)\b"
 )
 
 # Descriptions that point to teen or grown-up books, even when Google calls them kids' books
@@ -370,9 +382,51 @@ def title_key(title):
     return "".join(c for c in title if c.isalnum())
 
 
-@lru_cache(maxsize=512)
+# Books that aren't stories to read
+NOT_A_STORY = re.compile(r"how to draw|coloring|colouring|activity|sticker|workbook|puzzle|game of|guide to|encyclopedia", re.IGNORECASE)
+
+# Self-publishing services: anyone can publish there, so there's no editor checking the book
+SELF_PUBLISHERS = re.compile(
+    r"independently published|createspace|lulu|xlibris|authorhouse|iuniverse|trafford|outskirts|page publishing|"
+    r"dorrance|christian faith|archway|balboa|friesen|tellwell|bookbaby|draft2digital|smashwords|blurb|"
+    r"kindle direct|austin macauley|self[- ]published|westbow|liferich|partridge|notion press|mascot books",
+    re.IGNORECASE,
+)
+
+ENGLISH_WORDS = {"the", "and", "to", "a", "of", "is", "in", "his", "her", "with", "for", "when", "she", "he"}
+
+
+def is_english(text):
+    """Google sometimes says a book is in English when its description isn't (like a Danish edition)."""
+    words = re.findall(r"[a-zA-Z']+", text.lower())[:60]
+    return len(words) < 8 or sum(1 for word in words if word in ENGLISH_WORDS) >= 4
+
+
+@lru_cache(maxsize=256)
+def google_topic_books(topics):
+    """Kids' story books on these topics straight from Google Books, to add to Open Library's
+    popular books (for topics like art, where Open Library only has a few)."""
+    words = " ".join(f'"{t}"' if " " in t else t for t in topics)
+    books = search_books(f'{words} subject:"juvenile fiction"', "en")
+    return tuple(
+        book for book in books
+        if "juvenile" in " ".join(book.get("categories", [])).lower()
+        and "young adult" not in " ".join(book.get("categories", [])).lower()
+    )
+
+
 def google_kids_book(title, author):
-    """The Google Books version of a book, only if Google says it's a kids' book."""
+    """The Google Books version of a book, only if Google says it's a kids' book.
+    If Google has a hiccup, this one book is skipped (and tried again next time)."""
+    try:
+        return _google_kids_book(title, author)
+    except requests.RequestException as error:
+        print("Google Books error:", repr(error))
+        return None
+
+
+@lru_cache(maxsize=512)
+def _google_kids_book(title, author):
     query = f'intitle:"{title}"' + (f' inauthor:"{author}"' if author else "")
     wanted = title_key(title)
     for book in search_books(query, "en"):
@@ -449,25 +503,58 @@ def recommend_books(topics, interests, age, exclude, limit=3, reading_age=None, 
             # how popular it is (0 to about 4.5), plus a little for subjects that match the kid's interests
             matches = sum(1 for word in interest_words if word.rstrip("s") in subjects_text)
             popularity = math.log10((doc.get("readinglog_count") or 0) + 1) + 0.5 * matches
-            candidates.append((search_number, popularity, doc))
+            candidates.append((search_number, popularity, doc, None))
+
+    # More books straight from Google Books, for topics where Open Library has only a few.
+    # They go through all the same checks below. Google rarely has ratings, so they rank a bit
+    # below Open Library's well-loved books and mostly fill the gaps.
+    for search_number, search_info in enumerate(searches):
+        try:
+            google_books = google_topic_books(tuple(search_info["check"]))
+        except requests.RequestException as error:
+            print("Google Books error:", repr(error))
+            continue
+        for book in google_books:
+            key = title_key(book["title"])
+            if not key or key in seen or key in excluded:
+                continue
+            seen.add(key)
+            publisher = (book.get("publisher") or "").lower()
+            self_published = (
+                not publisher
+                or SELF_PUBLISHERS.search(publisher)
+                or any(name.lower() in publisher for name in book.get("authors", []))  # the author published it
+            )
+            if self_published or not is_english(book.get("description", "")):
+                continue  # no editor checked it, or not in English
+            pages = book.get("pageCount") or 0
+            if pages and not (min_pages(age) <= pages <= max_pages(reading_age)):
+                continue
+            popularity = 0.5 * math.log10((book.get("ratingsCount") or 0) + 1)
+            doc = {"title": book["title"], "author_name": book.get("authors", []), "subject": []}
+            candidates.append((search_number, popularity, doc, book))
 
     # Read the descriptions of the most popular books from each search (Google Books),
     # and score each one on how much its story is really about the topics and the kid's interests
     candidates.sort(key=lambda c: (c[0], -c[1]))
     scored = []
-    checked = [0] * len(searches)
-    for search_number, popularity, doc in candidates:
-        # the most popular few per search, to save Google searches
-        if checked[search_number] >= (6 if searches[search_number]["interest"] else 10):
+    checked = {}  # how many books we've read per search, from each source
+    for search_number, popularity, doc, found_on_google in candidates:
+        # the most popular few per search and source, to save Google searches
+        budget = (search_number, found_on_google is not None)
+        limit_here = 6 if searches[search_number]["interest"] or found_on_google else 10
+        if checked.get(budget, 0) >= limit_here:
             continue
-        checked[search_number] += 1
+        checked[budget] = checked.get(budget, 0) + 1
         authors = doc.get("author_name") or []
         author = authors[0] if authors else ""
-        book = google_kids_book(doc["title"], author)
+        book = found_on_google or google_kids_book(doc["title"], author)
         if not book or title_key(book["title"]) in excluded:
             continue
 
         description = book.get("description", "").lower()
+        if NOT_A_STORY.search(book["title"]):
+            continue  # an activity, coloring, or drawing book
         if GROWN_UP_DESCRIPTION.search(description):
             continue  # a teen or grown-up book
         if age <= 8 and VIOLENT_STORY.search(description):
