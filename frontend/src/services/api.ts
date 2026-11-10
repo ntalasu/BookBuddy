@@ -160,3 +160,14 @@ export async function getRecommendations(
 
   return response.json();
 }
+
+// Is this a well-known kids' book? For things kids type like "cat in the hat". Returns null if not.
+export async function getKnownBook(title: string): Promise<Book | null> {
+  const response = await fetch(`${API_URL}/books/known?title=${encodeURIComponent(title)}`);
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.json();
+}

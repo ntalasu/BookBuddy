@@ -3,7 +3,9 @@ import { ChatApiService } from "../api/ChatApiService"
 import type { Student } from "../context/StudentContext"
 import type { ChatMessage } from "../types"
 
-export function useChat(student: Student, greeting: string) {
+// useAI is false when Buddy's AI can't run (yet): the simple chat answers instead.
+// onAIFailed is called if the AI breaks in the middle of the chat, to switch to the simple chat for good.
+export function useChat(student: Student, greeting: string, useAI: boolean, onAIFailed?: () => void) {
   const [messages, setMessages] = useState<ChatMessage[]>([{ from: "buddy", text: greeting }])
   const [typing, setTyping] = useState(false) // true from sending until Buddy's reply is finished
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +28,8 @@ export function useChat(student: Student, greeting: string) {
       // show Buddy's reply word by word as it's written
       const response = await ChatApiService.sendMessage(student, history, (textSoFar) => {
         if (textSoFar.trim()) setMessages([...history, { from: "buddy", text: textSoFar }])
-      })
+      }, useAI)
+      if (response.aiFailed) onAIFailed?.()
       setMessages([
         ...history,
         {
@@ -45,7 +48,7 @@ export function useChat(student: Student, greeting: string) {
   }
 
   async function defineWord(word: string, context: string) {
-    const response = await ChatApiService.defineWord(student, word, context)
+    const response = await ChatApiService.defineWord(student, word, context, useAI)
     return response.definition
   }
 

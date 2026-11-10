@@ -66,6 +66,7 @@ export type ChatResponse = {
   reply: string
   vocabularyWords: string[]
   recommendedBooks: GoogleBook[]
+  aiFailed?: boolean // the AI broke while writing this reply, so the simple chat answered instead
 }
 
 export type DefinitionResponse = {

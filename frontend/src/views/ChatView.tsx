@@ -43,7 +43,15 @@ function ChatView() {
   const { student } = useLoggedInStudent()
   const buddy = useBuddyLoader() // starts waking Buddy up as soon as the chat opens
   const starters = pickStarters(student.interests)
-  const { messages, typing, error, sendMessage, defineWord } = useChat(student, greeting(student, starters))
+  // One chat for every device: the simple chat answers while the AI loads (and for good if this device
+  // can't run it, or if it breaks), and Buddy's AI answers once it's ready
+  const useAI = buddy.status === "ready"
+  const { messages, typing, error, sendMessage, defineWord } = useChat(
+    student,
+    greeting(student, starters),
+    useAI,
+    buddy.switchToSimple,
+  )
   const hasChatted = messages.some((message) => message.from === "student")
 
   // after Buddy recommends a book: buttons to find a better one, using the kid's profile picks
@@ -51,6 +59,15 @@ function ChatView() {
   const justRecommended = !typing && lastMessage?.from === "buddy" && (lastMessage.recommendedBooks?.length ?? 0) > 0
   const kidMessages = messages.filter((message) => message.from === "student").map((message) => message.text)
   const followUps = justRecommended ? followUpOptions(pickSearch(kidMessages, student.interests), student.interests) : []
+
+  // Without the AI, buttons are always there to keep going (typing still works too)
+  const keepGoing =
+    !useAI && hasChatted && !typing && followUps.length === 0
+      ? [
+          ...starters.slice(0, 3).map((pick) => ({ label: pick, message: `I like ${pick.toLowerCase()}!` })),
+          { label: "📚 Pick a book for me", message: "Show me another book!" },
+        ]
+      : []
   const [selectedWord, setSelectedWord] = useState<string | null>(null)
   const [definition, setDefinition] = useState<{ word: string; text: string } | null>(null)
 
@@ -68,13 +85,20 @@ function ChatView() {
       <h2 className="mb-4 text-2xl font-bold">Chat with BookBuddy</h2>
 
       <div className="flex h-[32rem] max-w-2xl flex-col rounded-xl bg-white shadow-lg">
-        {/* "Buddy is waking up…" until the AI is ready */}
-        {buddy.status !== "ready" && (
-          <BuddyWakingUp student={student} status={buddy.status} progress={buddy.progress} firstTime={buddy.firstTime} />
+        {/* a small "Buddy is waking up…" bar while the AI loads (kids can chat meanwhile) */}
+        {buddy.status === "loading" && (
+          <BuddyWakingUp student={student} progress={buddy.progress} firstTime={buddy.firstTime} />
+        )}
+
+        {/* a note for grown-ups when Buddy's AI can't run on this device */}
+        {buddy.status === "simple" && (
+          <p className="rounded-t-xl bg-gray-50 px-4 py-2 text-xs text-gray-500">
+            Buddy is using its simple chat on this device. For Buddy's full chat, use Chrome or Edge on a newer computer or tablet.
+          </p>
         )}
 
         {/* messages */}
-        <div className={`flex-1 space-y-3 overflow-y-auto p-4 ${buddy.status === "ready" ? "" : "hidden"}`}>
+        <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.map((message, index) => (
             <div
               key={index}
@@ -136,7 +160,7 @@ function ChatView() {
         )}
 
         {/* the kid's profile picks, as buttons to start the chat */}
-        {buddy.status === "ready" && !hasChatted && starters.length > 0 && (
+        {!hasChatted && starters.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pb-2">
             {starters.map((pick) => (
               <button
@@ -151,9 +175,9 @@ function ChatView() {
           </div>
         )}
 
-        {followUps.length > 0 && (
+        {[...followUps, ...keepGoing].length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pb-2">
-            {followUps.map((option) => (
+            {[...followUps, ...keepGoing].map((option) => (
               <button
                 key={option.label}
                 onClick={() => sendMessage(option.message)}
@@ -165,7 +189,7 @@ function ChatView() {
           </div>
         )}
 
-        <ChatInput onSend={sendMessage} disabled={typing || buddy.status !== "ready"} />
+        <ChatInput onSend={sendMessage} disabled={typing} />
       </div>
     </section>
   )

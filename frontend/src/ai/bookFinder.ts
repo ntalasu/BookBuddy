@@ -2,7 +2,7 @@
 // Only a topic word like "dragon" is ever searched, never the kid's actual message,
 // so what kids type stays on their device.
 import { groupInterests } from "../data/interests"
-import { getRecommendations, searchBooks, type Book } from "../services/api"
+import { getKnownBook, getRecommendations, searchBooks, type Book } from "../services/api"
 
 // Kid words -> the topic we search for. Covers every interest on the profile page too.
 // A "kind" of book (like mystery) can be mixed with a thing (like dogs) to find a dog mystery.
@@ -121,9 +121,31 @@ const namingPhrases = [
   /\b(?:book|story) (?:called|named) (.+)/,
   /\bheard of (.+)/,
   /\b(?:have you|did you|i|i've|ive|i have|im|i'm|i am) (?:ever )?(?:read|reading|finished|started) (.+)/,
+  /\b(?:do you know|you know|know about|what about|tell me about|heard about|talk about) (.+)/,
+  /\bis (.+?) (?:a good|good|fun|scary|funny|any good)\b/,
 ]
-// Softer signs, like "I love Matilda". These only match books Buddy already knows about.
+// Softer signs, like "I love the cat in the hat". These are only a book if it's a well-known kids' book
+// with exactly that title (so "I like playing outside" isn't mistaken for a book).
 const likingPhrases = [/\b(?:i|i really) (?:like|love|liked|loved) (.+)/, /\babout (.+)/]
+
+// Words that are just topics or "books", like "space books" or "funny dogs" (not a title)
+function onlyTopicWords(text: string) {
+  const topicWords = new Set(topics.flatMap((topic) => topic.words))
+  const filler = new Set(["book", "books", "story", "stories", "ones", "one", "kind", "stuff", "things", "please"])
+  return text.split(/\s+/).every((word) => word.length < 3 || topicWords.has(word) || filler.has(word))
+}
+
+// Usual ways a chat message starts, which means it isn't just a book title
+const chatStarters =
+  /^(i|i'm|im|you|we|yes|yeah|yep|no|nope|nah|ok|okay|thanks|thank|what|why|how|when|where|who|can|could|do|does|did|is|are|was|that|this|it|its|it's|my|me|show|tell|hi|hello|hey|please|lol|cool|wow|yay|maybe|sure)\b/
+
+// A message that might be just a title, like "cat in the hat" or "dog man"
+function bareTitle(message: string) {
+  const text = message.toLowerCase().replace(/[?.!,]+$/, "").trim()
+  const words = text.split(/\s+/)
+  if (words.length < 2 || words.length > 6 || /[0-9@]/.test(text) || chatStarters.test(text)) return null
+  return onlyTopicWords(text) ? null : text
+}
 
 // Words that end the title part of a sentence, like "have you read matilda AND holes"
 const titleEnders = /\s+(?:and|but|because|cause|too|yet|it|it's|its|is|was|by|right|lol)\b.*$/
@@ -140,8 +162,9 @@ function titleFrom(message: string, patterns: RegExp[], clearlyABook: boolean, w
     const title = (whole ? phrase : phrase.replace(titleEnders, "")).trim()
     const words = title.split(/\s+/).filter(Boolean)
     if (words.length === 0 || words.length > 6 || /[0-9@]/.test(title)) continue
-    // "i love dragons" is a topic, not a title (but "have you read dog man" is a title)
+    // "i love dragons" or "what about space books" is a topic, not a title (but "have you read dog man" is)
     if (findTopic(title) && words.length <= (clearlyABook ? 1 : 2)) continue
+    if (onlyTopicWords(title)) continue
     if (/^(?:a|an|some|any|about|books?|stories|reading|it|that|this|them|you|my|your)\b/.test(title)) continue
     return title
   }
@@ -207,9 +230,17 @@ export async function findMentionedBook(kidMessages: string[], knownBooks: Book[
       }
     }
 
-    // 2. Clearly naming a book Buddy doesn't know: look it up
+    // 2. Clearly naming a book Buddy doesn't know: look it up (and say so if it can't be found)
     const named = titleFrom(message, namingPhrases, true)
     if (named) return { typedTitle: named, book: await lookUpTitle(named) }
+
+    // 3. Maybe a title ("I love the cat in the hat", or just "cat in the hat"): only counts as a book
+    //    if it's a well-known kids' book with exactly that title (our backend checks Open Library)
+    const maybe = titleFrom(message, likingPhrases, false, true) ?? bareTitle(message)
+    if (maybe && maybe.split(/\s+/).length >= 2) {
+      const book = await getKnownBook(maybe).catch(() => null)
+      if (book) return { typedTitle: maybe, book }
+    }
   }
   return null
 }
@@ -290,6 +321,7 @@ export function followUpOptions(search: BookSearch | null, interests: string[]):
     }
   }
 
+  options.push({ label: "🤔 What's it about?", message: "What is it about?" })
   options.push({ label: "📚 Another one", message: "Show me another one!" })
   return options
 }
@@ -298,7 +330,7 @@ export function followUpOptions(search: BookSearch | null, interests: string[]):
 
 // "Dog Man: Grime and Punishment: A Graphic Novel (Dog Man #9): From the Creator of..." -> "Dog Man: Grime and Punishment"
 export function shortTitle(title: string) {
-  const [main, subtitle] = title.replace(/\s*\(.*?\)/g, "").split(/\s*:\s*/)
+  const [main, subtitle] = title.replace(/\s*\(.*?\)/g, "").replace(/[.\s]+$/, "").split(/\s*:\s*/)
   const isFluff = !subtitle || /novel|edition|book \d|from the|series|story|stories|special|classic/i.test(subtitle)
   return isFluff ? main.trim() : `${main.trim()}: ${subtitle.trim()}`
 }

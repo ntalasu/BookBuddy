@@ -592,3 +592,32 @@ def recommend_books(topics, interests, age, exclude, limit=3, reading_age=None, 
         if len(books) == limit:
             break
     return books
+
+
+@lru_cache(maxsize=512)
+def well_known_kids_book(title):
+    """A well-known kids' book with exactly this title, or None.
+    For things kids type like "cat in the hat" or "dog man": it only counts as a book if lots of
+    readers know it (Open Library), so "playing outside" isn't mistaken for a book."""
+    try:
+        response = requests.get(
+            OPEN_LIBRARY_URL,
+            params={"title": title, "limit": 5, "fields": "title,author_name,readinglog_count"},
+            headers={"User-Agent": "BookBuddy (kids reading app)"},
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.RequestException as error:
+        print("Open Library error:", repr(error))
+        return None
+
+    for doc in response.json().get("docs", []):
+        if title_key(doc.get("title", "")) != title_key(title):
+            continue
+        if (doc.get("readinglog_count") or 0) < 25:
+            continue  # not well known
+        authors = doc.get("author_name") or []
+        book = google_kids_book(doc["title"], authors[0] if authors else "")
+        if book:
+            return book
+    return None

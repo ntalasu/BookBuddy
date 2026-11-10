@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from services.google_books import search_books, get_book_details
 from services.badges import get_progress
-from services.recommendations import recommend_books
+from services.recommendations import recommend_books, well_known_kids_book
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import (
     init_db, save_book, get_saved_books, delete_book,
@@ -269,6 +269,13 @@ def get_recommendations(
             status_code=502,
             detail="Unable to find book recommendations right now."
         )
+
+
+# Is this a well-known kids' book? (For things kids type, like "cat in the hat".)
+# Returns the book, or null if it isn't one.
+@app.get("/books/known")
+def get_known_book(title: str = Query(min_length=2, max_length=80)):
+    return well_known_kids_book(title)
 
 
 # Get details for a specific book
