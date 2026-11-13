@@ -122,7 +122,7 @@ NOT_THE_STORY = re.compile(
 
 def story_text(book):
     """Just the sentences of the description that tell what happens in the book."""
-    sentences = re.split(r"(?<=[.!?])[\"”’]?\s+", book.get("description", ""))
+    sentences = re.split(r'(?<=[.!?])["”’]?\s+', book.get("description", ""))
     return " ".join(s for s in sentences if not NOT_THE_STORY.search(s)).lower()
 
 
@@ -177,6 +177,7 @@ OLDER_CLASSICS = {"classic literature", "american literature", "english literatu
 
 # Heavy subjects that are too much for younger kids (8 and under)
 TOO_HEAVY_FOR_YOUNGER = ("death", "murder", "violence", "war", "racism", "police", "shooting", "grief", "slavery", "holocaust")
+
 
 # Longest book (in pages) that usually fits a kid of this age
 def max_pages(age):
@@ -308,7 +309,7 @@ def nyt_lists(doc):
 
 def fits_age(book, doc, age, reading_age):
     """Is the book right for this kid's age (what it's about) and reading level (how hard it is)?"""
-    categories = detailed_categories(book["id"])
+    categories = tuple(c.lower() for c in book.get("categories", []))
 
     # which New York Times bestseller list it was on is a strong clue about who it's for
     lists = " ".join(nyt_lists(doc))
@@ -348,7 +349,9 @@ def fits_age(book, doc, age, reading_age):
 def category_interest_score(book, interests):
     """How many of the kid's interests show up in Google's detailed categories
     (like "Humorous Stories" for a kid who picked Funny). A strong sign the book fits."""
-    categories = " | ".join(detailed_categories(book["id"]))
+    categories = " | ".join(
+        c.lower() for c in book.get("categories", [])
+    )
     stems = {"funny": "humor", "jokes & riddles": "humor", "spooky": "horror", "pets": "pet", "animals": "animal"}
     words = [stems.get(i.lower(), i.lower().split(" &")[0].rstrip("s")) for i in interests]
     return sum(1 for word in words if len(word) >= 3 and word in categories)
@@ -521,9 +524,9 @@ def recommend_books(topics, interests, age, exclude, limit=3, reading_age=None, 
             seen.add(key)
             publisher = (book.get("publisher") or "").lower()
             self_published = (
-                not publisher
-                or SELF_PUBLISHERS.search(publisher)
-                or any(name.lower() in publisher for name in book.get("authors", []))  # the author published it
+                    not publisher
+                    or SELF_PUBLISHERS.search(publisher)
+                    or any(name.lower() in publisher for name in book.get("authors", []))  # the author published it
             )
             if self_published or not is_english(book.get("description", "")):
                 continue  # no editor checked it, or not in English
@@ -542,7 +545,7 @@ def recommend_books(topics, interests, age, exclude, limit=3, reading_age=None, 
     for search_number, popularity, doc, found_on_google in candidates:
         # the most popular few per search and source, to save Google searches
         budget = (search_number, found_on_google is not None)
-        limit_here = 6 if searches[search_number]["interest"] or found_on_google else 10
+        limit_here = 4 if searches[search_number]["interest"] or found_on_google else 10
         if checked.get(budget, 0) >= limit_here:
             continue
         checked[budget] = checked.get(budget, 0) + 1
@@ -566,10 +569,10 @@ def recommend_books(topics, interests, age, exclude, limit=3, reading_age=None, 
             continue  # the story isn't about one of the topics
         # the kid's profile interests count a lot: a ghost story with a dog, for a kid who loves dogs
         score = (
-            popularity
-            + sum(topic_scores)
-            + 2 * interest_score(book, interests)
-            + 2 * category_interest_score(book, interests)
+                popularity
+                + sum(topic_scores)
+                + 2 * interest_score(book, interests)
+                + 2 * category_interest_score(book, interests)
         )
         scored.append((search_number, score, author, book))
 
@@ -621,3 +624,295 @@ def well_known_kids_book(title):
         if book:
             return book
     return None
+
+
+# Find books similar to a specific book, not just books about the same topic.
+
+SIMILARITY_STOP_WORDS = {
+    "about", "after", "again", "also", "another", "because",
+    "before", "book", "books", "could", "every", "first",
+    "from", "have", "into", "just", "more", "most", "other",
+    "over", "read", "reader", "readers", "really", "some",
+    "story", "stories", "their", "there", "these", "they",
+    "this", "those", "through", "very", "when", "where",
+    "which", "while", "with", "would", "young", "children",
+    "child", "author", "edition", "series", "novel",
+}
+
+
+def similarity_words(text):
+    """Important words from a book's title or description."""
+    return {
+        word
+        for word in re.findall(r"[a-z]{4,}", text.lower())
+        if word not in SIMILARITY_STOP_WORDS
+    }
+
+
+def similarity_score(original, candidate):
+    """Compare two books using their actual information."""
+
+    original_title = similarity_words(original.get("title", ""))
+    candidate_title = similarity_words(candidate.get("title", ""))
+
+    original_story = similarity_words(story_text(original))
+    candidate_story = similarity_words(story_text(candidate))
+
+    original_categories = {
+        category.lower()
+        for category in original.get("categories", [])
+    }
+
+    candidate_categories = {
+        category.lower()
+        for category in candidate.get("categories", [])
+    }
+
+    title_overlap = len(original_title & candidate_title)
+    story_overlap = len(original_story & candidate_story)
+    category_overlap = len(original_categories & candidate_categories)
+
+    # Categories and themes matter more than sharing a random word.
+    score = (
+            3 * title_overlap
+            + min(story_overlap, 10)
+            + 5 * category_overlap
+    )
+
+    return score
+
+
+# Important characteristics of popular children's books.
+# These help Buddy understand what makes two books similar.
+KNOWN_BOOK_STYLES = {
+    "matilda": {
+        "topics": ["magic", "school", "funny"],
+        "format": "chapter",
+        "titles": [
+            "The Worst Witch",
+            "The Witches",
+            "The Magic Finger",
+            "The BFG",
+        ],
+    },
+    "dogman": {
+        "topics": ["comic", "funny", "adventure"],
+        "format": "graphic",
+        "titles": [
+            "Cat Kid Comic Club",
+            "The Bad Guys",
+            "InvestiGators",
+            "Captain Underpants",
+        ],
+    },
+    "charlottesweb": {
+        "topics": ["animal", "friend"],
+        "format": "chapter",
+        "titles": [
+            "The One and Only Ivan",
+            "The Tale of Despereaux",
+            "Because of Winn-Dixie",
+            "The Trumpet of the Swan",
+        ],
+    },
+    "diaryofawimpykid": {
+        "topics": ["funny", "school", "friend"],
+        "format": "chapter",
+        "titles": [
+            "Dork Diaries",
+            "Big Nate",
+            "The Last Kids on Earth",
+            "Middle School: The Worst Years of My Life",
+        ],
+    },
+}
+
+
+def book_format(book):
+    """Estimate whether a book is a graphic novel, picture book, or chapter book."""
+    categories = " ".join(book.get("categories", [])).lower()
+    description = book.get("description", "").lower()
+
+    text = categories + " " + description
+
+    if any(word in text for word in [
+        "graphic novel",
+        "comic book",
+        "comics & graphic novels",
+    ]):
+        return "graphic"
+
+    if any(word in text for word in [
+        "picture book",
+        "board book",
+    ]):
+        return "picture"
+
+    return "chapter"
+
+
+def recommend_similar_books(
+        original,
+        age,
+        reading_age=None,
+        exclude=None,
+        limit=3,
+):
+    """Find books similar in genre, format, and story themes."""
+
+    reading_age = reading_age or age
+
+    # Don't recommend the original book or books already suggested.
+    excluded = {title_key(t) for t in (exclude or [])}
+    excluded.add(title_key(original.get("title", "")))
+
+    original_key = title_key(original.get("title", ""))
+    known = KNOWN_BOOK_STYLES.get(original_key)
+
+    # Use known themes for popular children's books.
+    if known:
+        topics = known["topics"]
+        wanted_format = known["format"]
+
+    # For unfamiliar books, figure out the themes from the description.
+    else:
+        topics = sorted(
+            SUBJECTS,
+            key=lambda t: topic_score(original, t),
+            reverse=True,
+        )
+
+        topics = [
+            t for t in topics
+            if topic_score(original, t) > 0
+        ][:3]
+
+        wanted_format = book_format(original)
+
+    candidates = []
+    seen = set(excluded)
+
+    # First look for books known to be similar.
+    if known:
+        for title in known["titles"]:
+            book = google_kids_book(title, "")
+
+            if not book:
+                continue
+
+            key = title_key(book["title"])
+
+            if key in seen:
+                continue
+
+            # Apply the same basic age and reading-level safeguards.
+            description = book.get("description", "").lower()
+            pages = book.get("pageCount") or 0
+
+            # Skip activity books, coloring books, etc.
+            if NOT_A_STORY.search(book["title"]):
+                continue
+
+            # Skip teen or grown-up books.
+            if GROWN_UP_DESCRIPTION.search(description):
+                continue
+
+            # Skip violent stories for younger kids.
+            if age <= 8 and VIOLENT_STORY.search(description):
+                continue
+
+            # Check book length against reading ability.
+            if pages and not (
+                    min_pages(age) <= pages <= max_pages(reading_age)
+            ):
+                continue
+
+            # Use existing age and reading-level checks.
+            doc = {
+                "title": book["title"],
+                "subject": [],
+            }
+
+            if not fits_age(book, doc, age, reading_age):
+                continue
+
+            # Prefer the same format as the original book.
+            candidate_format = book_format(book)
+
+            if wanted_format == "graphic" and candidate_format != "graphic":
+                continue
+
+            if wanted_format == "chapter" and candidate_format == "picture":
+                continue
+
+            seen.add(key)
+
+            # Known similar books get priority.
+            candidates.append((100, book))
+
+    # Then search for books with matching topics.
+    searches = [
+        topics[:2],
+        topics[1:3],
+        topics[:1],
+    ]
+
+    for search_topics in searches:
+        if not search_topics:
+            continue
+
+        try:
+            results = recommend_books(
+                topics=search_topics,
+                interests=[],
+                age=age,
+                exclude=list(seen),
+                limit=10,
+                reading_age=reading_age,
+            )
+
+        except requests.RequestException as error:
+            print("Similar book search error:", repr(error))
+            continue
+
+        for book in results:
+            key = title_key(book["title"])
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            # Compare the candidate with the original book.
+            score = similarity_score(original, book)
+
+            candidate_format = book_format(book)
+
+            # Strongly prefer books with the same format.
+            if candidate_format == wanted_format:
+                score += 20
+
+            elif wanted_format == "graphic":
+                score -= 20
+
+            else:
+                score -= 8
+
+            # Reward matching story themes.
+            score += sum(
+                4 * topic_score(book, topic)
+                for topic in topics
+            )
+
+            candidates.append((score, book))
+
+    # Best matches first.
+    candidates.sort(
+        key=lambda item: item[0],
+        reverse=True,
+    )
+
+    return [
+        book
+        for _, book in candidates[:limit]
+    ]

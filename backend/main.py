@@ -5,7 +5,11 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from services.google_books import search_books, get_book_details
 from services.badges import get_progress
-from services.recommendations import recommend_books, well_known_kids_book
+from services.recommendations import (
+    recommend_books,
+    recommend_similar_books,
+    well_known_kids_book,
+)
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import (
     init_db, save_book, get_saved_books, delete_book,
@@ -277,7 +281,39 @@ def get_recommendations(
 def get_known_book(title: str = Query(min_length=2, max_length=80)):
     return well_known_kids_book(title)
 
+class SimilarBooksRequest(BaseModel):
+    book: Book
+    age: int = Field(ge=3, le=14)
+    readingLevel: str = ""
+    exclude: list[str] = Field(default_factory=list)
 
+
+@app.post("/books/similar")
+def get_similar_books(request: SimilarBooksRequest):
+
+    reading_age = request.age
+    level = request.readingLevel.lower()
+
+    if level.startswith("kinder"):
+        reading_age = 5
+    elif level.startswith("grade") and level[-1].isdigit():
+        reading_age = int(level[-1]) + 5
+
+    try:
+        return recommend_similar_books(
+            original=request.book.model_dump(),
+            age=request.age,
+            reading_age=reading_age,
+            exclude=request.exclude,
+            limit=3,
+        )
+
+    except requests.RequestException as error:
+        print("Similar books error:", repr(error))
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to find similar books right now.",
+        )
 # Get details for a specific book
 @app.get("/books/{book_id}")
 def get_book(book_id: str):

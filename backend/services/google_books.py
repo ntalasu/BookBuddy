@@ -3,10 +3,74 @@ import os
 from dotenv import load_dotenv
 import re
 import html
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from functools import lru_cache
+import sqlite3
+import json
+import time
+from pathlib import Path
 
 load_dotenv()
 
 GOOGLE_BOOKS_URL = "https://www.googleapis.com/books/v1/volumes"
+CACHE_DB = Path(__file__).resolve().parent.parent / "google_books_cache.db"
+CACHE_SECONDS = 7 * 24 * 60 * 60  # 7 days
+
+
+def initialize_cache():
+    with sqlite3.connect(CACHE_DB, timeout=10) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS google_books_cache (
+                cache_key TEXT PRIMARY KEY,
+                response TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+        """)
+
+
+def get_cached(cache_key):
+    with sqlite3.connect(CACHE_DB, timeout=10) as conn:
+        row = conn.execute(
+            """
+            SELECT response, created_at
+            FROM google_books_cache
+            WHERE cache_key = ?
+            """,
+            (cache_key,)
+        ).fetchone()
+
+    if row and time.time() - row[1] < CACHE_SECONDS:
+        return json.loads(row[0])
+
+    return None
+
+
+def save_cached(cache_key, data):
+    with sqlite3.connect(CACHE_DB, timeout=10) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO google_books_cache
+            (cache_key, response, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (cache_key, json.dumps(data), time.time())
+        )
+
+
+initialize_cache()
+
+
+retry_strategy = Retry(
+    total=1,
+    backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    allowed_methods=["GET"],
+)
+
+session = requests.Session()
+session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+
 
 def clean_description(description):
     if not description:
@@ -17,6 +81,7 @@ def clean_description(description):
     description = re.sub(r"<[^>]+>", "", description)
 
     return html.unescape(description).strip()
+
 
 def is_child_friendly(info):
     title = info.get("title", "").lower()
@@ -89,7 +154,16 @@ def is_child_friendly(info):
 
     return any(word in title or word in description for word in child_keywords)
 
+
+@lru_cache(maxsize=256)
 def search_books(query, language=None):
+    # Check SQLite cache before calling Google Books
+    cache_key = f"search:{query.strip().lower()}:{language or ''}"
+
+    cached = get_cached(cache_key)
+    if cached is not None:
+        return cached
+
     params = {
         "q": query,
         "maxResults": 40,
@@ -101,11 +175,15 @@ def search_books(query, language=None):
     if language:
         params["langRestrict"] = language
 
-    response = requests.get(
+    response = session.get(
         GOOGLE_BOOKS_URL,
         params=params,
         timeout=10
     )
+
+    if response.status_code != 200:
+        print("Google Books status:", response.status_code)
+        print("Google Books error:", response.text[:500])
 
     response.raise_for_status()
     data = response.json()
@@ -138,16 +216,28 @@ def search_books(query, language=None):
         if len(books) == 10:
             break
 
+    # Save successful results to SQLite cache
+    save_cached(cache_key, books)
+
     return books
 
+
+@lru_cache(maxsize=512)
 def get_book_details(book_id):
+    # Check SQLite cache before calling Google Books
+    cache_key = f"details:{book_id}"
+
+    cached = get_cached(cache_key)
+    if cached is not None:
+        return cached
+
     url = f"{GOOGLE_BOOKS_URL}/{book_id}"
 
     params = {
         "key": os.getenv("GOOGLE_BOOKS_API_KEY")
     }
 
-    response = requests.get(url, params=params, timeout=10)
+    response = session.get(url, params=params, timeout=10)
 
     response.raise_for_status()
 
@@ -155,7 +245,7 @@ def get_book_details(book_id):
 
     info = book.get("volumeInfo", {})
 
-    return {
+    result = {
         "id": book.get("id"),
         "title": info.get("title", ""),
         "authors": info.get("authors", []),
@@ -165,3 +255,8 @@ def get_book_details(book_id):
         "publishedDate": info.get("publishedDate", ""),
         "categories": info.get("categories", [])
     }
+
+    # Save successful book details to SQLite cache
+    save_cached(cache_key, result)
+
+    return result
