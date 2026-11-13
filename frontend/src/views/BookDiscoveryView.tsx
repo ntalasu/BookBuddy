@@ -112,11 +112,12 @@ function BookDiscoveryView() {
   const [savedBooks, setSavedBooks] = useState<Book[]>([])
   const [query, setQuery] = useState("Matilda")
   const [loading, setLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState("")
   const [detailsError, setDetailsError] = useState("")
 
-  const [, setShowingRecommendations] = useState(true)
+  //const [, setShowingRecommendations] = useState(true)
   // the saved book being rated in the "How did you like it?" pop-up
   const [reviewingBook, setReviewingBook] = useState<Book | null>(null)
   const [reviewJustFinished, setReviewJustFinished] = useState(false)
@@ -242,15 +243,19 @@ function BookDiscoveryView() {
   // Search for books using Google Books API
 async function handleSearch(searchQuery: string) {
   if (!searchQuery.trim()) {
-    await loadRecommendations()
+    setBooks([])
+    setError("")
+    setHasSearched(false)
     return
   }
 
-    setLoading(true)
-    setError("")
-    setDetailsError("")
-    setSaveMessage("")
-    setSelectedBook(null)
+  setHasSearched(true)
+  setLoading(true)
+
+  setError("")
+  setDetailsError("")
+  setSaveMessage("")
+  setSelectedBook(null)
 
     try {
       const results = await searchBooks(searchQuery)
@@ -264,10 +269,9 @@ async function handleSearch(searchQuery: string) {
     }
   }
 
-  // Load books when the page opens
+// Load books when the page opens
 useEffect(() => {
-  handleSearch("Matilda")
-  loadSavedBooks()
+  void loadSavedBooks()
 }, [])
 
   // Retrieve full book details when clicked
@@ -522,12 +526,7 @@ useEffect(() => {
           type="text"
           value={query}
           onChange={(e) => {
-            const value = e.target.value
-            setQuery(value)
-
-            if (!value.trim()) {
-              void loadRecommendations()
-            }
+            setQuery(e.target.value)
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") handleSearch(query)
@@ -558,7 +557,7 @@ useEffect(() => {
         </p>
       )}
 
-      {!loading && !error && books.length === 0 && (
+      {hasSearched && !loading && !error && books.length === 0 && (
         <p className="mb-4 text-gray-600">
           No books found.
         </p>

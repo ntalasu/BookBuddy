@@ -171,3 +171,29 @@ export async function getKnownBook(title: string): Promise<Book | null> {
 
   return response.json();
 }
+export async function getSimilarBooks(
+  book: Book,
+  age: number,
+  readingLevel: string,
+  exclude: string[],
+): Promise<Book[]> {
+  const response = await fetch("http://localhost:8000/books/similar", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({
+      book,
+      age,
+      readingLevel,
+      exclude,
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error("Failed to find similar books")
+  }
+
+  return response.json()
+}

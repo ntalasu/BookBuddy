@@ -1,5 +1,8 @@
 import {
   asksForAnother,
+  similarBookTitle,
+  topicsFromBook,
+  pickSimilarBook,
   describeSearch,
   findMentionedBook,
   mentionsTopic,
@@ -47,7 +50,10 @@ export const ChatApiService = {
     // Recommendations: we write "Try <title> by <author>!" ourselves, so it always matches the book card,
     // and say so if the book only matches part of what the kid asked for. Then the real story sentence(s)
     // that show what the book is about, picked by us from the description.
-    const line = task.type === "recommend" ? partialMatchLine(task.book, task.search) + recommendationLine(task.book) : ""
+    const line =
+      task.type === "recommend"
+        ? recommendationLine(task.book)
+        : ""
     const story = task.type === "recommend" ? bestStorySentence(task.book, task.search) : null
 
     // The simple chat's reply (no AI): used on devices that can't run the AI, while it's still
@@ -109,6 +115,51 @@ async function decideTask(
   shelf: Book[],
   suggested: Book[],
 ): Promise<BuddyTask> {
+
+  // Check if the student wants a book similar to another book
+  const similarTitle = similarBookTitle(latest)
+
+  if (similarTitle) {
+    const mentioned = await findMentionedBook(
+      [`Have you read ${similarTitle}?`],
+      shelf,
+      favoriteTitlesForAge(student.age)
+    ).catch(() => null)
+
+    if (mentioned?.book) {
+      const search = topicsFromBook(mentioned.book)
+
+      const book = await pickSimilarBook(
+        mentioned.book,
+        {
+          age: student.age,
+          readingLevel: student.readingLevel,
+        },
+        [...shelf, ...suggested, mentioned.book]
+      ).catch((error) => {
+        console.error("Similar book recommendation failed:", error)
+        return null
+      })
+
+      if (book) {
+        return {
+          type: "recommend",
+          book,
+          search: search ?? { kind: "adventure" },
+        }
+      }
+
+      return {
+        type: "noBooks",
+        topic: similarTitle,
+      }
+    }
+
+    return {
+      type: "noBooks",
+      topic: similarTitle,
+    }
+  }
   // 1. The kid named a book ("have you read Dog Man?"): talk about it
   const mentioned = await findMentionedBook([latest], shelf, favoriteTitlesForAge(student.age)).catch(() => null)
   if (mentioned) return { type: "talkAbout", mentioned }

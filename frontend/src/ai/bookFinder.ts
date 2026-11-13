@@ -2,8 +2,13 @@
 // Only a topic word like "dragon" is ever searched, never the kid's actual message,
 // so what kids type stays on their device.
 import { groupInterests } from "../data/interests"
-import { getKnownBook, getRecommendations, searchBooks, type Book } from "../services/api"
-
+import {
+  getKnownBook,
+  getRecommendations,
+  getSimilarBooks,
+  searchBooks,
+  type Book,
+} from "../services/api"
 // Kid words -> the topic we search for. Covers every interest on the profile page too.
 // A "kind" of book (like mystery) can be mixed with a thing (like dogs) to find a dog mystery.
 type Topic = { search: string; words: string[]; kind?: boolean }
@@ -75,7 +80,11 @@ function findTopic(text: string) {
 }
 
 // What to search for: a kind of book and/or a thing, like { kind: "mystery", thing: "dog" }
-export type BookSearch = { kind?: string; thing?: string }
+export type BookSearch = {
+  kind?: string
+  thing?: string
+  extraTopics?: string[]
+}
 
 // Pick what to search for: the topics in the kid's newest message. For "another one" or "yes",
 // the topics from their last few messages. If the chat hasn't mentioned any, their profile picks.
@@ -266,7 +275,11 @@ export async function pickBookFor(
   kid: { interests: string[]; age: number; readingLevel: string },
   skip: Book[],
 ) {
-  const topics = [search.thing, search.kind].filter((topic): topic is string => Boolean(topic))
+  const topics = [
+    search.thing,
+    search.kind,
+    ...(search.extraTopics ?? []),
+  ].filter((topic): topic is string => Boolean(topic))
   const skipTitles = skip.map((book) => book.title)
 
   // the kid's profile picks as topics (like "Pets" -> "pet"), so the backend can find books that mix them in
@@ -522,4 +535,107 @@ export function keepsTheDetails(simpler: string, story: string) {
   const shared = [...stems(simpler)].filter((stem) => storyStems.has(stem)).length
   const sharedNames = namesIn(simpler).filter((name) => story.includes(name)).length
   return sharedNames >= 1 || shared >= 2
+}
+
+// Find requests like "books similar to Matilda" or "what should I read after Dog Man?"
+export function similarBookTitle(message: string): string | null {
+  const patterns = [
+    /\b(?:similar to|books? like|something like)\s+(.+)/i,
+    /\b(?:read after|after reading)\s+(.+)/i,
+    /\b(?:recommend|suggest|find)\s+(?:me\s+)?(?:a\s+)?books?\s+(?:similar to|like)\s+(.+)/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern)
+
+    if (match) {
+      return match[1].trim().replace(/[?.!]+$/, "")
+    }
+  }
+  return null
+}
+// Find the main topics of a book for similar-book recommendations
+export function topicsFromBook(book: Book): BookSearch | null {
+  const title = book.title.toLowerCase()
+  const categories = (book.categories ?? []).join(" ").toLowerCase()
+  const description = book.description.toLowerCase()
+
+  const matches = (text: string, words: string[]) =>
+    words.some((word) => {
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      return new RegExp(`\\b${escaped}\\b`, "i").test(text)
+    })
+
+  const ranked = topics
+    .map((topic) => {
+      let score = 0
+
+      if (matches(title, topic.words)) score += 5
+      if (matches(categories, topic.words)) score += 4
+      if (matches(description, topic.words)) score += 1
+
+      return { topic, score }
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  let kind = ranked.find(({ topic }) => topic.kind)?.topic.search
+  let thing = ranked.find(({ topic }) => !topic.kind)?.topic.search
+
+  // Recognize common book series more accurately.
+  // These themes describe the books, not the student's profile interests.
+const knownSeries: Record<string, BookSearch> = {
+  matilda: {
+    kind: "magic",
+    thing: "school",
+    extraTopics: ["friend"],
+  },
+
+  "dog man": {
+    kind: "comic",
+    thing: "dog",
+    extraTopics: ["funny", "adventure"],
+  },
+
+  "charlotte's web": {
+    kind: "fantasy",
+    thing: "animal",
+    extraTopics: ["friend"],
+  },
+}
+
+  const known = Object.entries(knownSeries).find(([name]) =>
+    title === name || title.startsWith(`${name}:`)
+  )
+
+if (known) {
+  return known[1]
+}
+
+return kind || thing ? { kind, thing } : null
+}
+
+export async function pickSimilarBook(
+  original: Book,
+  kid: {
+    age: number
+    readingLevel: string
+  },
+  skip: Book[],
+): Promise<Book | null> {
+
+  console.log("Original book:", original.title)
+  console.log("Student age:", kid.age)
+  console.log("Reading level:", kid.readingLevel)
+
+  const books = await getSimilarBooks(
+    original,
+    kid.age,
+    kid.readingLevel,
+    skip.map((book) => book.title),
+  )
+
+  console.log("Similar books returned:", books)
+
+  return books[0] ?? null
 }
