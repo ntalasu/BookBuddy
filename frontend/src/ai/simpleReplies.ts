@@ -21,7 +21,7 @@ const keywordReplies: [RegExp, (name: string) => string][] = [
   [/\b(hi|hello|hey|hiya)\b/, (name) => `Hi ${name}! 👋 What do you want to read about today?`],
   [/\b(no|nope|nah|don't|dont)\b/, () => "That's okay! What else do you like to read about? 📚"],  // before "thanks", so "no thanks" isn't "you're welcome"
   [/\b(thanks|thank you|thx)\b/, () => "You're welcome! 📚 Happy reading!"],
-  [/\b(bored|boring)\b/, () => "Let's find you a fun book! 📚 Do you like dragons, space, or something funny?"],
+  [/\b(bored|boring|not interested)\b/, () => "Let's find you a fun book! 📚 Do you like dragons, space, or something funny?"],
   [/\b(read it|finished|already read|done)\b/, () => "Wow, great job reading! 🌟 Want me to find another one?"],
   [/\b(yes|yeah|yay|yep|sure|ok|okay|cool|awesome|love)\b/, () => "Yay! 🎉 Tap 📚 Another one for more, or tell me what you like!"],
   [/\?\s*$/, () => "Great question! I'm best at finding books. 📚 Tell me something you like, like dogs, magic, or space!"],

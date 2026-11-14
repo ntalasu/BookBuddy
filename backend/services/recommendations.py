@@ -77,6 +77,7 @@ TOPIC_WORDS = {
     "fantasy": ("magic*", "fantasy", "dragon", "wizard", "quest", "kingdom"),
     "magic": ("magic*", "wizard", "witch", "witches", "spell", "enchant*"),
     "fairy": ("fairy", "fairies", "princess", "princesses", "once upon"),
+    "monster": ("monster", "beast", "creature"), 
     "ghost": ("ghost", "haunt*", "spook*", "spirit"),
     "comic": ("comic", "graphic novel"),
     "poems": ("poem", "poetry", "rhym*", "verse"),
@@ -565,7 +566,7 @@ def recommend_books(topics, interests, age, exclude, limit=3, reading_age=None, 
         if not fits_age(book, doc, age, reading_age):
             continue  # for older (or younger) kids, or too hard (or too easy) to read
         topic_scores = [topic_score(book, t) for t in searches[search_number]["check"]]
-        if min(topic_scores) == 0:
+        if min(topic_scores) < 2:
             continue  # the story isn't about one of the topics
         # the kid's profile interests count a lot: a ghost story with a dog, for a kid who loves dogs
         score = (
