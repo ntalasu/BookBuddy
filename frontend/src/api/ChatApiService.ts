@@ -88,9 +88,28 @@ export const ChatApiService = {
   },
 
   // Chats aren't saved anywhere yet, so every visit starts fresh
-  async getConversation(): Promise<ChatMessage[]> {
+  // we want the chats to save the conversations 
+  async getConversation(studentId: string): Promise<ChatMessage[]> {
+  const saved = localStorage.getItem(`bookbuddy-chat-${studentId}`)
+
+  if (!saved) return []
+
+  try {
+    return JSON.parse(saved) as ChatMessage[]
+  } catch {
     return []
-  },
+  }
+},
+
+async saveConversation(
+  studentId: string,
+  messages: ChatMessage[],
+): Promise<void> {
+  localStorage.setItem(
+    `bookbuddy-chat-${studentId}`,
+    JSON.stringify(messages),
+  )
+},
 
   // The meaning comes from a real dictionary. Buddy only rewords it for kids, and if its
   // version doesn't match the dictionary, kids see the dictionary's own (shortened) meaning.
