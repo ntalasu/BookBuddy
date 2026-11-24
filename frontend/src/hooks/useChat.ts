@@ -13,6 +13,7 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
 
   const sendMessage = useCallback(async (message: string) => {
     let currentConversationId = conversationId 
+    let createdNewConversation = false 
 
   const history: ChatMessage[] = [
     ...messages,
@@ -30,8 +31,7 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
         await ChatApiService.createConversation(student.id)
 
       currentConversationId = newConversation.id
-
-      onConversationCreated?.(currentConversationId)
+      createdNewConversation = true
     }
 
     const response = await ChatApiService.sendMessage(
@@ -69,6 +69,9 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
       currentConversationId!,
       finalMessages
     )
+    if (createdNewConversation) {
+        onConversationCreated?.(currentConversationId)
+    }
   } catch (e) {
     setMessages(history)
     setError((e as Error).message)
