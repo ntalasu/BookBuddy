@@ -25,7 +25,11 @@ async function handleSignOut() {
 
     const data: { logoutUrl: string | null } = await response.json()
 
-    clearStudent()
+    sessionStorage.removeItem(
+  `bookbuddy-active-chat-${student.id}`
+)
+
+clearStudent()
 
     window.location.href =
       data.logoutUrl || "http://localhost:5173/welcome"
