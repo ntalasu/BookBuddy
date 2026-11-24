@@ -4,6 +4,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+import json 
 
 
 DATABASE_PATH = Path(__file__).resolve().parent / "books.db"
@@ -31,6 +32,27 @@ def init_db():
             published_date TEXT,
             categories TEXT
         )
+    """)
+    # one row for every chatbot conversation 
+    connection.execute("""
+    CREATE TABLE IF NOT EXISTS chat_conversations (
+        id TEXT PRIMARY KEY,
+        student_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """)
+    #  Many saved messages in a conversation 
+    connection.execute("""
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        text TEXT NOT NULL,
+        vocabulary_words TEXT NOT NULL DEFAULT '[]',
+        recommended_books TEXT NOT NULL DEFAULT '[]'
+    )
     """)
 
     # Connect saved books to individual students
@@ -597,3 +619,154 @@ def delete_auth_session(token):
 
     connection.commit()
     connection.close()
+
+def create_chat_conversation(conversation_id, student_id, created_at):
+    connection = get_connection()
+
+    connection.execute("""
+        INSERT INTO chat_conversations
+        (id, student_id, title, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        conversation_id,
+        student_id,
+        "New conversation",
+        created_at,
+        created_at,
+    ))
+
+    connection.commit()
+    connection.close()
+
+
+def get_chat_conversations(student_id):
+    connection = get_connection()
+
+    rows = connection.execute("""
+        SELECT id, student_id, title, created_at, updated_at
+        FROM chat_conversations
+        WHERE student_id = ?
+        ORDER BY updated_at DESC
+    """, (student_id,)).fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]
+
+
+def get_chat_conversation(student_id, conversation_id):
+    connection = get_connection()
+
+    conversation = connection.execute("""
+        SELECT id, student_id, title, created_at, updated_at
+        FROM chat_conversations
+        WHERE id = ? AND student_id = ?
+    """, (conversation_id, student_id)).fetchone()
+
+    if not conversation:
+        connection.close()
+        return None
+
+    messages = connection.execute("""
+        SELECT sender, text, vocabulary_words, recommended_books
+        FROM chat_messages
+        WHERE conversation_id = ?
+        ORDER BY id
+    """, (conversation_id,)).fetchall()
+
+    connection.close()
+
+    result = dict(conversation)
+
+    result["messages"] = [
+        {
+            "from": row["sender"],
+            "text": row["text"],
+            "vocabularyWords": json.loads(row["vocabulary_words"]),
+            "recommendedBooks": json.loads(row["recommended_books"]),
+        }
+        for row in messages
+    ]
+
+    return result
+
+
+def save_chat_messages(
+    student_id,
+    conversation_id,
+    messages,
+    updated_at
+):
+    connection = get_connection()
+
+    conversation = connection.execute("""
+        SELECT id
+        FROM chat_conversations
+        WHERE id = ? AND student_id = ?
+    """, (conversation_id, student_id)).fetchone()
+
+    if not conversation:
+        connection.close()
+        return None
+
+    messages = [
+        message.model_dump(by_alias=True)
+        if hasattr(message, "model_dump")
+        else message
+        for message in messages
+    ]
+
+    student_messages = [
+        message
+        for message in messages
+        if message["from"] == "student"
+    ]
+
+    title = (
+        student_messages[0]["text"][:40]
+        if student_messages
+        else "New conversation"
+    )
+
+    connection.execute("""
+        DELETE FROM chat_messages
+        WHERE conversation_id = ?
+    """, (conversation_id,))
+
+    for message in messages:
+        connection.execute("""
+            INSERT INTO chat_messages
+            (
+                conversation_id,
+                sender,
+                text,
+                vocabulary_words,
+                recommended_books
+            )
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            conversation_id,
+            message["from"],
+            message["text"],
+            json.dumps(message.get("vocabularyWords", [])),
+            json.dumps(message.get("recommendedBooks", [])),
+        ))
+
+    connection.execute("""
+        UPDATE chat_conversations
+        SET title = ?, updated_at = ?
+        WHERE id = ? AND student_id = ?
+    """, (
+        title,
+        updated_at,
+        conversation_id,
+        student_id,
+    ))
+
+    connection.commit()
+    connection.close()
+
+    return get_chat_conversation(
+        student_id,
+        conversation_id
+    )

@@ -24,7 +24,7 @@ import { simpleReply } from "../ai/simpleReplies"
 import type { BuddyTask } from "../ai/buddyInstructions"
 import type { Student } from "../context/StudentContext"
 import { getSavedBooks, type Book } from "../services/api"
-import type { ChatMessage, ChatResponse, DefinitionResponse } from "../types"
+import type {ChatConversation, ChatMessage, ChatResponse, DefinitionResponse,} from "../types"
 
 // Buddy's chat runs on the AI in the browser (see src/ai), not the backend,
 // so it's free, has no message limit, and messages never leave the kid's device.
@@ -87,29 +87,93 @@ export const ChatApiService = {
     return { reply, vocabularyWords, recommendedBooks, aiFailed }
   },
 
-  // Chats aren't saved anywhere yet, so every visit starts fresh
-  // we want the chats to save the conversations 
-  async getConversation(studentId: string): Promise<ChatMessage[]> {
-  const saved = localStorage.getItem(`bookbuddy-chat-${studentId}`)
-
-  if (!saved) return []
-
+  //start the conversation 
+  async createConversation(
+  studentId: string
+): Promise<{ id: string }> {
   try {
-    return JSON.parse(saved) as ChatMessage[]
-  } catch {
-    return []
+    const response = await fetch(
+      `http://localhost:8000/students/${studentId}/conversations`,
+      {
+        method: "POST",
+        credentials: "include",
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(
+        `Conversation request failed: ${response.status}`
+      )
+    }
+
+    return response.json()
+  } catch (error) {
+    console.error("createConversation failed:", error)
+    throw error
   }
 },
-
-async saveConversation(
-  studentId: string,
-  messages: ChatMessage[],
-): Promise<void> {
-  localStorage.setItem(
-    `bookbuddy-chat-${studentId}`,
-    JSON.stringify(messages),
+ 
+async getConversations(
+  studentId: string
+): Promise<ChatConversation[]> {
+  const response = await fetch(
+    `http://localhost:8000/students/${studentId}/conversations`,
+    {
+      credentials: "include",
+    }
   )
+
+  if (!response.ok) {
+    throw new Error("Failed to load conversations")
+  }
+
+  return response.json()
 },
+
+  // Chats aren't saved anywhere yet, so every visit starts fresh
+  // we want the chats to save the conversations 
+    async getConversation(
+    studentId: string,
+    conversationId: string
+  ): Promise<ChatMessage[]> {
+    const response = await fetch(
+      `http://localhost:8000/students/${studentId}/conversations/${conversationId}`,
+      {
+        credentials: "include",
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error("Failed to load conversation")
+    }
+
+    const conversation = await response.json()
+
+    return conversation.messages ?? []
+  },
+
+  async saveConversation(
+    studentId: string,
+    conversationId: string,
+    messages: ChatMessage[]
+  ): Promise<void> {
+    const response = await fetch(
+      `http://localhost:8000/students/${studentId}/conversations/${conversationId}`,
+      {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messages }),
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error("Failed to save conversation")
+    }
+  },
+ 
 
   // The meaning comes from a real dictionary. Buddy only rewords it for kids, and if its
   // version doesn't match the dictionary, kids see the dictionary's own (shortened) meaning.

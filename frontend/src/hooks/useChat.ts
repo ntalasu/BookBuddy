@@ -1,25 +1,19 @@
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { ChatApiService } from "../api/ChatApiService"
 import type { Student } from "../context/StudentContext"
 import type { ChatMessage } from "../types"
 
 // useAI is false when Buddy's AI can't run (yet): the simple chat answers instead.
 // onAIFailed is called if the AI breaks in the middle of the chat, to switch to the simple chat for good.
-export function useChat(student: Student, greeting: string, useAI: boolean, onAIFailed?: () => void) {
+export function useChat(student: Student, greeting: string, useAI: boolean, onAIFailed: (() => void) | undefined, conversationId: string | null, onConversationCreated?: (conversationId: string) => void) {
   const [messages, setMessages] = useState<ChatMessage[]>([{ from: "buddy", text: greeting }])
   const [typing, setTyping] = useState(false) // true from sending until Buddy's reply is finished
   const [error, setError] = useState<string | null>(null)
-
-  const loadConversation = useCallback(async () => {
-    try {
-      const earlier = await ChatApiService.getConversation(student.id)
-      if (earlier.length > 0) setMessages(earlier)
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }, [])
+  
 
   async function sendMessage(message: string) {
+  let currentConversationId = conversationId
+
   const history: ChatMessage[] = [
     ...messages,
     { from: "student", text: message },
@@ -30,7 +24,16 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
   setError(null)
 
   try {
-    // show Buddy's reply word by word as it's written
+    // Create a conversation only when the first message is sent
+    if (!currentConversationId) {
+      const newConversation =
+        await ChatApiService.createConversation(student.id)
+
+      currentConversationId = newConversation.id
+
+      onConversationCreated?.(currentConversationId)
+    }
+
     const response = await ChatApiService.sendMessage(
       student,
       history,
@@ -42,7 +45,7 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
           ])
         }
       },
-      useAI,
+      useAI
     )
 
     if (response.aiFailed) {
@@ -63,7 +66,8 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
 
     await ChatApiService.saveConversation(
       student.id,
-      finalMessages,
+      currentConversationId!,
+      finalMessages
     )
   } catch (e) {
     setMessages(history)
@@ -80,18 +84,33 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
 
   // load any earlier messages once when the screen first shows up
   useEffect(() => {
-    let ignore = false // if the screen closes before the data arrives, don't use it
-    ChatApiService.getConversation(student.id)
-      .then((earlier) => {
-        if (!ignore && earlier.length > 0) setMessages(earlier)
-      })
-      .catch((e: Error) => {
-        if (!ignore) setError(e.message)
-      })
-    return () => {
-      ignore = true
-    }
-  }, [])
+  let ignore = false
 
-  return { messages, typing, error, sendMessage, defineWord, loadConversation }
+  if (!conversationId) {
+    setMessages([{ from: "buddy", text: greeting }])
+    return
+  }
+
+  ChatApiService.getConversation(student.id, conversationId)
+    .then((earlier) => {
+      if (!ignore) {
+        setMessages(
+          earlier.length > 0
+            ? earlier
+            : [{ from: "buddy", text: greeting }]
+        )
+      }
+    })
+    .catch((e: Error) => {
+      if (!ignore) {
+        setError(e.message)
+      }
+    })
+
+  return () => {
+    ignore = true
+  }
+}, [student.id, conversationId, greeting])
+
+  return { messages, typing, error, sendMessage, defineWord,}
 }

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useLoggedInStudent, type Student } from "../context/StudentContext"
 import { followUpOptions, pickSearch } from "../ai/bookFinder"
 import { groupInterests } from "../data/interests"
@@ -9,6 +9,10 @@ import BuddyWakingUp from "./BuddyWakingUp"
 import ChatInput from "./ChatInput"
 import RecommendedBookCard from "./RecommendedBookCard"
 import VocabularyCard from "./VocabularyCard"
+import type { ChatConversation } from "../types" 
+import { ChatApiService } from "../api/ChatApiService" 
+
+
 
 function cleanWord(word: string) {
   return word.toLowerCase().replace(/[^a-z]/g, "")
@@ -46,12 +50,62 @@ function ChatView() {
   // One chat for every device: the simple chat answers while the AI loads (and for good if this device
   // can't run it, or if it breaks), and Buddy's AI answers once it's ready
   const useAI = buddy.status === "ready"
-  const { messages, typing, error, sendMessage, defineWord } = useChat(
-    student,
-    greeting(student, starters),
-    useAI,
-    buddy.switchToSimple,
-  )
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<
+  ChatConversation[]
+  >([])
+
+  const sessionKey = `bookbuddy-active-chat-${student.id}`
+
+  useEffect(() => {
+  const savedConversationId =
+    sessionStorage.getItem(sessionKey)
+
+  ChatApiService.getConversations(student.id)
+    .then((loadedConversations) => {
+      setConversations(loadedConversations)
+
+      const savedConversationExists =
+        loadedConversations.some(
+          (conversation) =>
+            conversation.id === savedConversationId
+        )
+
+      if (savedConversationExists && savedConversationId) {
+        setActiveConversationId(savedConversationId)
+      }
+    })
+    .catch((error) => {
+      console.error("Failed to load conversations:", error)
+    })
+}, [student.id, sessionKey]) 
+
+const {
+  messages,
+  typing,
+  error,
+  sendMessage,
+  defineWord,
+} = useChat(
+  student,
+  greeting(student, starters),
+  useAI,
+  buddy.switchToSimple,
+  activeConversationId,
+  (newConversationId) => {
+    setActiveConversationId(newConversationId)
+
+    sessionStorage.setItem(
+      sessionKey,
+      newConversationId
+    )
+
+    ChatApiService.getConversations(student.id)
+      .then(setConversations)
+      .catch(console.error)
+  }
+)
+
   const hasChatted = messages.some((message) => message.from === "student")
 
   // after Buddy recommends a book: buttons to find a better one, using the kid's profile picks
@@ -80,11 +134,47 @@ function ChatView() {
     }
   }
 
+  function startNewChat() {
+  sessionStorage.removeItem(sessionKey)
+  setActiveConversationId(null)
+  }
+
   return (
     <section className="p-6">
       <h2 className="mb-4 text-2xl font-bold">Chat with BookBuddy</h2>
 
-      <div className="flex h-[32rem] max-w-2xl flex-col rounded-xl bg-white shadow-lg">
+      <div className="flex h-[32rem] max-w-5xl overflow-hidden rounded-xl bg-white shadow-lg">
+  <aside className="w-64 shrink-0 overflow-y-auto border-r bg-amber-50 p-3">
+    <button
+      onClick={startNewChat}
+      className="mb-4 w-full rounded-lg bg-orange-500 px-3 py-2 font-semibold text-white hover:bg-orange-600"
+    >
+      + New chat
+    </button>
+
+    <h3 className="mb-2 text-sm font-bold text-gray-600">
+      Previous conversations
+    </h3>
+
+    {conversations.map((conversation) => (
+      <button
+        key={conversation.id}
+        onClick={() => {
+          setActiveConversationId(conversation.id)
+          sessionStorage.setItem(sessionKey, conversation.id)
+        }}
+        className={`mb-2 w-full rounded-lg p-2 text-left text-sm ${
+          activeConversationId === conversation.id
+            ? "bg-orange-200 font-semibold"
+            : "hover:bg-orange-100"
+        }`}
+      >
+        {conversation.title}
+      </button>
+    ))}
+  </aside>
+
+  <div className="flex min-w-0 flex-1 flex-col"> 
         {/* a small "Buddy is waking up…" bar while the AI loads (kids can chat meanwhile) */}
         {buddy.status === "loading" && (
           <BuddyWakingUp student={student} progress={buddy.progress} firstTime={buddy.firstTime} />
@@ -98,7 +188,7 @@ function ChatView() {
         )}
 
         {/* messages */}
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"> 
           {messages.map((message, index) => (
             <div
               key={index}
@@ -190,9 +280,10 @@ function ChatView() {
         )}
 
         <ChatInput onSend={sendMessage} disabled={typing} />
+        </div>
       </div>
     </section>
-  )
-}
+  ) 
+} 
 
 export default ChatView

@@ -62,6 +62,14 @@ export type ChatMessage = {
   recommendedBooks?: GoogleBook[] // books Buddy named, which the kid can add to their bookshelf
 }
 
+export type ChatConversation = {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  messages?: ChatMessage[]
+}
+
 export type ChatResponse = {
   reply: string
   vocabularyWords: string[]
@@ -73,3 +81,6 @@ export type DefinitionResponse = {
   word: string
   definition: string
 }
+
+
+

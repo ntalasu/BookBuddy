@@ -12,13 +12,26 @@ from services.recommendations import (
 )
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import (
-    init_db, save_book, get_saved_books, delete_book,
-    find_student_by_workos_id, create_student, update_student,
-    create_auth_session, get_auth_session, delete_auth_session,
+    init_db,
+    save_book,
+    get_saved_books,
+    delete_book,
+    find_student_by_workos_id,
+    create_student,
+    update_student,
+    create_auth_session,
+    get_auth_session,
+    delete_auth_session,
     get_workos_session_id,
-    add_reading_log, get_reading_logs,
-    update_book_status, count_finished_books,
-    save_book_review
+    add_reading_log,
+    get_reading_logs,
+    update_book_status,
+    count_finished_books,
+    save_book_review,
+    create_chat_conversation,
+    get_chat_conversations,
+    get_chat_conversation,
+    save_chat_messages,
 )
 import requests
 import uuid
@@ -29,6 +42,7 @@ import secrets
 import base64
 import json
 from datetime import datetime, timezone
+from typing import Literal 
 
 load_dotenv()
 
@@ -80,6 +94,18 @@ class Book(BaseModel):
     pageCount: int | None = None
     publishedDate: str = ""
     categories: list[str] = Field(default_factory=list)
+
+class ChatMessageRequest(BaseModel):
+    from_: Literal["student", "buddy"] = Field(alias="from")
+    text: str
+    vocabularyWords: list[str] = Field(default_factory=list)
+    recommendedBooks: list[Book] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
+class SaveChatRequest(BaseModel):
+    messages: list[ChatMessageRequest] 
 
 
 # Home endpoint
@@ -613,3 +639,65 @@ def get_student_progress(
         utcOffsetMinutes,
         count_finished_books(student_id)
     )
+# chtbot conversations 
+@app.post("/students/{student_id}/conversations")
+def create_conversation(
+    student_id: str,
+    workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
+
+    if not student or student["id"] != student_id:
+        raise HTTPException(status_code=404)
+
+    conversation_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    create_chat_conversation(
+        conversation_id,
+        student_id,
+        now
+    )
+
+    return {
+        "id": conversation_id,
+        "title": "New conversation",
+        "updated_at": now
+    }
+
+# to click on a sidebar conversation you already had 
+@app.get("/students/{student_id}/conversations")
+def list_conversations(
+    student_id: str,
+    workos_user_id: str = Depends(require_auth)
+):
+    return get_chat_conversations(student_id)
+
+#conversation retrieval 
+@app.get(
+    "/students/{student_id}/conversations/{conversation_id}"
+)
+def get_conversation(
+    student_id: str,
+    conversation_id: str,
+    workos_user_id: str = Depends(require_auth)
+):
+    return get_chat_conversation(student_id, conversation_id)
+
+# to save conversations 
+@app.put(
+    "/students/{student_id}/conversations/{conversation_id}"
+)
+def save_conversation(
+    student_id: str,
+    conversation_id: str,
+    request: SaveChatRequest,
+    workos_user_id: str = Depends(require_auth)
+):
+    return save_chat_messages(
+        student_id,
+        conversation_id,
+        request.messages,
+        datetime.now(timezone.utc).isoformat()
+    )
+
