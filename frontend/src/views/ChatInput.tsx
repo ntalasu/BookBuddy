@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { memo, useState } from "react" 
 
 type Props = {
   onSend: (message: string) => void
@@ -37,4 +37,4 @@ function ChatInput({ onSend, disabled }: Props) {
   )
 }
 
-export default ChatInput
+export default memo(ChatInput) 

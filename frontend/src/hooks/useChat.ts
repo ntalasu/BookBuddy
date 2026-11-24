@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react" 
 import { ChatApiService } from "../api/ChatApiService"
 import type { Student } from "../context/StudentContext"
 import type { ChatMessage } from "../types"
@@ -11,8 +11,8 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
   const [error, setError] = useState<string | null>(null)
   
 
-  async function sendMessage(message: string) {
-  let currentConversationId = conversationId
+  const sendMessage = useCallback(async (message: string) => {
+    let currentConversationId = conversationId 
 
   const history: ChatMessage[] = [
     ...messages,
@@ -75,7 +75,7 @@ export function useChat(student: Student, greeting: string, useAI: boolean, onAI
   } finally {
     setTyping(false)
   }
-}
+}, [conversationId, messages, onAIFailed, onConversationCreated, student, useAI,]) 
 
   async function defineWord(word: string, context: string) {
     const response = await ChatApiService.defineWord(student, word, context, useAI)

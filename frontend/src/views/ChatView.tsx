@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react" 
 import { useLoggedInStudent, type Student } from "../context/StudentContext"
 import { followUpOptions, pickSearch } from "../ai/bookFinder"
 import { groupInterests } from "../data/interests"
@@ -80,6 +80,22 @@ function ChatView() {
     })
 }, [student.id, sessionKey]) 
 
+const handleConversationCreated = useCallback(
+  (newConversationId: string) => {
+    setActiveConversationId(newConversationId)
+
+    sessionStorage.setItem(
+      sessionKey,
+      newConversationId
+    )
+
+    ChatApiService.getConversations(student.id)
+      .then(setConversations)
+      .catch(console.error)
+  },
+  [sessionKey, student.id]
+)
+
 const {
   messages,
   typing,
@@ -92,19 +108,22 @@ const {
   useAI,
   buddy.switchToSimple,
   activeConversationId,
-  (newConversationId) => {
-    setActiveConversationId(newConversationId)
-
-    sessionStorage.setItem(
-      sessionKey,
-      newConversationId
-    )
-
-    ChatApiService.getConversations(student.id)
-      .then(setConversations)
-      .catch(console.error)
-  }
+  handleConversationCreated
 )
+
+const messagesContainerRef = useRef<HTMLDivElement>(null)
+
+useEffect(() => {
+  const container = messagesContainerRef.current
+  if (!container) return
+
+  const frame = requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight
+  })
+
+  return () => cancelAnimationFrame(frame)
+}, [messages, typing])
+
 
   const hasChatted = messages.some((message) => message.from === "student")
 
@@ -188,7 +207,7 @@ const {
         )}
 
         {/* messages */}
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"> 
+        <div ref={messagesContainerRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           {messages.map((message, index) => (
             <div
               key={index}

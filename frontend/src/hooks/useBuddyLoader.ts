@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react" 
 import { loadBuddy, onBuddyLoadProgress } from "../ai/buddyEngine"
 import { BUDDY_MODEL } from "../ai/buddyModel"
 
@@ -53,9 +53,10 @@ export function useBuddyLoader() {
   }, [])
 
   // the AI broke in the middle of a chat (out of memory, the tab went to sleep...): use the simple chat from now on
-  function switchToSimple() {
-    setStatus("simple")
-  }
+  const switchToSimple = useCallback(() => {
+  setStatus("simple")
+}, [])
+
 
   return { status, progress, firstTime, switchToSimple }
 }
