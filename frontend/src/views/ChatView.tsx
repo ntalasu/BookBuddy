@@ -152,6 +152,40 @@ useEffect(() => {
       setDefinition({ word, text: "Sorry, I couldn't look that word up." })
     }
   }
+  async function deleteConversation(conversation: ChatConversation) {
+  const shouldDelete = window.confirm(
+    "Delete this conversation? This cannot be undone."
+  )
+
+  if (!shouldDelete) return
+
+  try {
+    await ChatApiService.deleteConversation(
+      student.id,
+      conversation.id
+    )
+
+    const remainingConversations = conversations.filter(
+      (item) => item.id !== conversation.id
+    )
+
+    setConversations(remainingConversations)
+
+    if (activeConversationId === conversation.id) {
+      const nextConversation = remainingConversations[0]
+
+      if (nextConversation) {
+        setActiveConversationId(nextConversation.id)
+        sessionStorage.setItem(sessionKey, nextConversation.id)
+      } else {
+        startNewChat()
+      }
+    }
+  } catch (error) {
+    console.error(error)
+    window.alert("Could not delete that conversation.")
+  }
+}
 
   function startNewChat() {
   sessionStorage.removeItem(sessionKey)
@@ -176,21 +210,35 @@ useEffect(() => {
     </h3>
 
     {conversations.map((conversation) => (
-      <button
-        key={conversation.id}
-        onClick={() => {
-          setActiveConversationId(conversation.id)
-          sessionStorage.setItem(sessionKey, conversation.id)
-        }}
-        className={`mb-2 w-full rounded-lg p-2 text-left text-sm ${
-          activeConversationId === conversation.id
-            ? "bg-orange-200 font-semibold"
-            : "hover:bg-orange-100"
-        }`}
-      >
-        {conversation.title}
-      </button>
-    ))}
+  <div
+    key={conversation.id}
+    className={`mb-2 flex w-full items-center rounded-lg text-sm ${
+      activeConversationId === conversation.id
+        ? "bg-orange-200 font-semibold"
+        : "hover:bg-orange-100"
+    }`}
+  >
+    <button
+      onClick={() => {
+        setActiveConversationId(conversation.id)
+        sessionStorage.setItem(sessionKey, conversation.id)
+      }}
+      className="min-w-0 flex-1 truncate p-2 text-left"
+    >
+      {conversation.title}
+    </button>
+
+    <button
+      type="button"
+      aria-label={`Delete ${conversation.title}`}
+      title="Delete conversation"
+      onClick={() => deleteConversation(conversation)}
+      className="mr-1 rounded p-1 text-gray-500 hover:bg-red-100 hover:text-red-600"
+    >
+      🗑️
+    </button>
+  </div>
+   ))}
   </aside>
 
   <div className="flex min-w-0 flex-1 flex-col"> 

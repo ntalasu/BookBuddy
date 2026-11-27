@@ -5,10 +5,9 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from services.google_books import search_books, get_book_details
 from services.badges import get_progress
-from services.recommendations import (
-    recommend_books,
-    recommend_similar_books,
+from services.recommendations import (recommend_books, recommend_similar_books,
     well_known_kids_book,
+
 )
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import (
@@ -32,6 +31,7 @@ from database import (
     get_chat_conversations,
     get_chat_conversation,
     save_chat_messages,
+    delete_chat_conversation, 
 )
 import requests
 import uuid
@@ -700,4 +700,25 @@ def save_conversation(
         request.messages,
         datetime.now(timezone.utc).isoformat()
     )
+# for deleting old conversations 
+@app.delete("/students/{student_id}/conversations/{conversation_id}")
+def delete_conversation(
+    student_id: str,
+    conversation_id: str,
+    workos_user_id: str = Depends(require_auth)
+):
+    student = find_student_by_workos_id(workos_user_id)
+
+    if not student or student["id"] != student_id:
+        raise HTTPException(status_code=404)
+
+    deleted = delete_chat_conversation(student_id, conversation_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found."
+        )
+
+    return {"deleted": True}
 

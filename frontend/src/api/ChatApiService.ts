@@ -30,6 +30,23 @@ import type {ChatConversation, ChatMessage, ChatResponse, DefinitionResponse,} f
 // so it's free, has no message limit, and messages never leave the kid's device.
 // useAI is false on devices that can't run the AI: then the code writes every reply (the "simple chat").
 export const ChatApiService = {
+  // you want to allow user to select old conversations and delete them 
+  async deleteConversation(
+  studentId: string,
+  conversationId: string
+): Promise<void> {
+  const response = await fetch(
+    `http://localhost:8000/students/${studentId}/conversations/${conversationId}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error("Failed to delete conversation")
+  }
+},
   // history = the whole chat so far, ending with the kid's new message.
   // onText is called with Buddy's reply so far, so it can appear word by word.
   async sendMessage(

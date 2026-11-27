@@ -770,3 +770,30 @@ def save_chat_messages(
         student_id,
         conversation_id
     )
+def delete_chat_conversation(student_id, conversation_id):
+    connection = get_connection()
+
+    conversation = connection.execute("""
+        SELECT id
+        FROM chat_conversations
+        WHERE id = ? AND student_id = ?
+    """, (conversation_id, student_id)).fetchone()
+
+    if not conversation:
+        connection.close()
+        return False
+
+    connection.execute("""
+        DELETE FROM chat_messages
+        WHERE conversation_id = ?
+    """, (conversation_id,))
+
+    connection.execute("""
+        DELETE FROM chat_conversations
+        WHERE id = ? AND student_id = ?
+    """, (conversation_id, student_id))
+
+    connection.commit()
+    connection.close()
+    return True
+
